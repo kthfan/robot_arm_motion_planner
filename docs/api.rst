@@ -1,48 +1,66 @@
-API Reference
+API reference
 =============
 
-motion_planner.solver
----------------------
+Package
+-------
+
+.. automodule:: motion_planner
+   :no-members:
+
+Planner
+-------
+
+.. automodule:: motion_planner.planner
+   :members: MotionPlanner, KinematicMotionPlanner, JointWaypoint, PathDiscontinuityError,
+             DISCONTINUITY_MODES, GOAL_SELECTIONS
+   :show-inheritance:
+
+Defaults
+--------
+
+.. automodule:: motion_planner.defaults
+   :members:
+
+Kinematics solvers
+------------------
 
 .. automodule:: motion_planner.solver
    :members:
    :show-inheritance:
 
-motion_planner.pinocchio_solver
--------------------------------
-
 .. automodule:: motion_planner.pinocchio_solver
    :members:
    :show-inheritance:
 
-motion_planner.planner
-----------------------
+Analytical IK
+-------------
 
-.. automodule:: motion_planner.planner
+.. automodule:: motion_planner.robust_eaik
+   :members: RobustIK, IKResult
+
+LINE_T search
+-------------
+
+.. automodule:: motion_planner.line_search
+   :members: LineSearch, LinePlan, Event, Trace, PathDiscontinuityError
+
+Self-motion
+-----------
+
+.. automodule:: motion_planner.self_motion
    :members:
-   :show-inheritance:
 
-motion_planner.path
--------------------
+Paths and poses
+---------------
 
 .. automodule:: motion_planner.path
    :members:
-   :show-inheritance:
-
-motion_planner.pose
--------------------
 
 .. automodule:: motion_planner.pose
    :members:
 
-motion_planner.calibration
---------------------------
+Calibration
+-----------
 
 .. automodule:: motion_planner.calibration
-   :members:
-
-motion_planner.defaults
------------------------
-
-.. automodule:: motion_planner.defaults
-   :members:
+   :members: KinematicCalibration, CalibrationResult, calibrate, load_pairs, fk_errors

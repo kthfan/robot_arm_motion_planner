@@ -103,7 +103,7 @@ class RobustIK:
     fixed_axes       : the same list of (index, value) the robot was built with.
     tol_pos, tol_rot : acceptance tolerance on the original model [m], [rad].
     near_singular    : sigma_min / sigma_max of the Jacobian below which twin seeds are added.
-    near_zero        : |sin q_b| below which a wrist-flip twin seed is added.
+    near_zero        : ``|sin q_b|`` below which a wrist-flip twin seed is added.
     kick             : size of the smallest twin-seed perturbation [rad]; near-singular candidates are
                        also sampled along the Jacobian's weakest direction at 0.2, 0.8 and 2.0 rad.
     """
@@ -505,8 +505,8 @@ class RobustIK:
 
         within_limits : drop solutions outside the joint limits (if limits are known).
         expand_2pi    : with limits, also return q_i +- 2*pi variants that fit the limits.
-        limit_tol     : solutions up to this far outside a limit [rad] are kept; they are clipped onto
-                        the limit only if the clipped q still reaches the target within tolerance.
+        limit_tol     : solutions up to this far outside a limit [rad] are kept; they are clipped
+        onto the limit only if the clipped q still reaches the target within tolerance.
         """
         T = self._prepare(T_tip)
         return self._postprocess(T, self.robot.IK(T), within_limits, expand_2pi, dedup_tol, limit_tol)

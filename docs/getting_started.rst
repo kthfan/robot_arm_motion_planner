@@ -7,20 +7,31 @@ Requirements
 * Python >= 3.10
 * ``numpy``, ``scipy``
 * ``pin`` (pinocchio >= 3) for FK, Jacobians and numerical IK
-* the EAIK fork ``eaik==1.2.2+robust.1`` for analytical IK, plus ``urchin``.
-  The fork adds ``tip_link``, idealization of near-parallel / near-intersecting
-  axes, and ``pos_error`` / ``rot_error`` on the original model. It is **not on
-  PyPI**: install the provided wheel first. The stock ``eaik`` package does not
-  have these APIs.
+* the EAIK fork `kthfan/EAIK <https://github.com/kthfan/EAIK>`_
+  (``eaik==1.2.2+robust.1``) for analytical IK, plus ``urchin``. The fork
+  adds ``tip_link``, idealization of near-parallel / near-intersecting axes,
+  and ``pos_error`` / ``rot_error`` on the original model; see its
+  ``ROBUST_CHANGES.md``. The stock ``eaik`` package on PyPI does not have
+  these APIs.
 
 Install
 -------
 
+``requirements.txt`` builds the EAIK fork from git. This needs a C++ compiler
+and takes 1-2 minutes:
+
 .. code-block:: bash
 
-   pip install /path/to/eaik-1.2.2+robust.1-*.whl   # the EAIK fork
    pip install -r requirements.txt
    pip install -e .              # or: pip install -e ".[test,docs]"
+
+To install the fork on its own, or from a local checkout (the submodules hold
+Eigen and ik-geo):
+
+.. code-block:: bash
+
+   pip install "eaik @ git+https://github.com/kthfan/EAIK.git@v1.2.2+robust.1"
+   git clone --recursive https://github.com/kthfan/EAIK && pip install ./EAIK
 
 Run the tests and build these docs:
 

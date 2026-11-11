@@ -13,7 +13,8 @@ dependencies = [
     "scipy",
     "pin>=3.0",
     # EAIK fork with the robust changes (tip_link, idealization, pos/rot_error);
-    # not on PyPI, install the provided build. urchin is an EAIK dependency.
+    # not on PyPI: https://github.com/kthfan/EAIK (requirements.txt installs it
+    # from git). urchin is an EAIK dependency.
     "eaik==1.2.2+robust.1",
     "urchin",
 ]

@@ -1,8 +1,8 @@
 numpy
 scipy
 pin>=3.0
-# EAIK fork with the robust changes (tip_link, idealization, pos/rot_error);
-# not on PyPI, install the provided build. urchin is an EAIK dependency.
-eaik==1.2.2+robust.1
+# EAIK fork with the robust changes (tip_link, idealization, pos/rot_error), v1.2.2+robust.1;
+# not on PyPI, built from source (needs a C++ compiler, ~1-2 min). urchin is an EAIK dependency.
+eaik @ git+https://github.com/kthfan/EAIK.git@8d143be1c77ea4e812447ad8cefbb9a58ec0a09e
 urchin
 pytest>=7.4.0

@@ -15,13 +15,20 @@ sends them to the robot as blended `PTP_J` motions.
 
 ## Install
 
-Requires Python >= 3.10. Analytical IK uses a fork of [EAIK](https://github.com/OstermD/EAIK)
-(`eaik==1.2.2+robust.1`). The fork is **not on PyPI**, so install the provided wheel first:
+Requires Python >= 3.10. Analytical IK uses [kthfan/EAIK](https://github.com/kthfan/EAIK), a fork of
+[EAIK](https://github.com/OstermD/EAIK) (`eaik==1.2.2+robust.1`). The fork is not on PyPI.
+`requirements.txt` builds it from git, which needs a C++ compiler and takes 1-2 minutes:
 
 ```bash
-pip install /path/to/eaik-1.2.2+robust.1-*.whl
-pip install -r requirements.txt
+pip install -r requirements.txt   # includes EAIK from git
 pip install -e .                  # or: pip install -e ".[test,docs]"
+```
+
+To install EAIK on its own, or from a local checkout:
+
+```bash
+pip install "eaik @ git+https://github.com/kthfan/EAIK.git@v1.2.2+robust.1"
+git clone --recursive https://github.com/kthfan/EAIK && pip install ./EAIK
 ```
 
 ## Quick start
@@ -76,6 +83,7 @@ pytest
 ```
 
 The tests need pinocchio and the EAIK fork. Without pinocchio, the solver and planner tests are skipped.
+GitHub Actions runs the tests and builds the docs on every push (`.github/workflows/ci.yml`).
 
 ## Calibrate
 

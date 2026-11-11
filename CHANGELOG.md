@@ -13,5 +13,7 @@ First release as a standalone package, split out of RobotServer (`robot/kinemati
   harness and field-log tools in `scripts/line_motion_experiments/`.
 - Sphinx docs: getting started, concepts, LINE_T algorithm and tuning, calibration, experiments, integration,
   API reference.
+- EAIK fork installed from https://github.com/kthfan/EAIK (pinned commit of v1.2.2+robust.1) by
+  `requirements.txt`; GitHub Actions CI runs the tests and builds the docs.
 - Tests for the package API, `RobustIK`, the scripts and the experiment harness. Two planner tests were
   updated for the current joint limits and smooth timing.

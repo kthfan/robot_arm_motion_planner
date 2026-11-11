@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "motion_planner"
+version = "0.1.0"
+description = "Kinematics (FK/IK) and Cartesian motion planning (PTP_T, LINE_T) for the Techman TM5S arm."
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "pin>=3.0",
+    # EAIK fork with the robust changes (tip_link, idealization, pos/rot_error);
+    # not on PyPI, install the provided build. urchin is an EAIK dependency.
+    "eaik==1.2.2+robust.1",
+    "urchin",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.4.0"]
+docs = ["sphinx"]
+
+[tool.setuptools.packages.find]
+include = ["motion_planner*"]
+
+[tool.setuptools.package-data]
+motion_planner = ["models/*"]

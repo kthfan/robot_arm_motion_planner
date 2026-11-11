@@ -1,0 +1,8 @@
+numpy
+scipy
+pin>=3.0
+# EAIK fork with the robust changes (tip_link, idealization, pos/rot_error);
+# not on PyPI, install the provided build. urchin is an EAIK dependency.
+eaik==1.2.2+robust.1
+urchin
+pytest>=7.4.0

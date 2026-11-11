@@ -6,3 +6,6 @@ build/
 dist/
 docs/_build/
 *.jsonl
+scripts/line_motion_experiments/results/
+.coverage
+htmlcov/

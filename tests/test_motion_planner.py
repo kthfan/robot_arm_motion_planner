@@ -439,6 +439,19 @@ def test_unsafe_line_t_jump_runs_at_line_speed_without_slowing_the_line(direct_p
     assert line_time < 5 * nominal
 
 
+def _same_waypoints(a, b, rel=1e-9):
+    """Same waypoints and flags; speed % / acc_time equal up to rounding (hold / jump
+    time the line with the smooth profile, which equals the trapezoid of a clean
+    line only up to floating-point rounding)."""
+    assert len(a) == len(b)
+    for x, y in zip(a, b):
+        np.testing.assert_array_equal(x.positions, y.positions)
+        assert x.velocity == pytest.approx(y.velocity, rel=rel)
+        assert x.acc_time == pytest.approx(y.acc_time, rel=rel)
+        assert (x.blend_percentage, x.fine_goal, x.blocked) == (
+            y.blend_percentage, y.fine_goal, y.blocked)
+
+
 @pytest.mark.parametrize("mode", ["hold", "jump"])
 def test_unsafe_line_t_without_problems_equals_safe_line_t(planner, solver, mode):
     goal = _shifted_goal(solver, Q_HOME, (0.1, 0.1, -0.05))
@@ -448,7 +461,7 @@ def test_unsafe_line_t_without_problems_equals_safe_line_t(planner, solver, mode
         unsafe = planner.plan_line_t(
             Q_HOME, goal, velocity=10, acc_time=0.2, on_discontinuity=mode
         )
-    assert unsafe == safe
+    _same_waypoints(unsafe, safe)
 
 
 @pytest.mark.parametrize("mode", ["hold", "jump"])
@@ -721,7 +734,9 @@ def test_line_t_goal_joints_on_another_branch_select_that_goal(planner, solver):
 def test_goal_joints_without_a_matching_goal_configuration_raise(planner, solver):
     goal, sols = _goal_and_solutions(solver)
     same = next(q for q in sols if solver.branch(q) == solver.branch(Q_HOME))
-    turned = same + np.array([0, 0, 0, 0, 0, 2 * np.pi])  # q6 beyond its 210 deg limit
+    # the same configuration one q6 turn further, beyond the q6 limit
+    turned = same + np.array([0, 0, 0, 0, 0, -2 * np.pi if same[5] < 0 else 2 * np.pi])
+    assert not solver.lower_limits[5] <= turned[5] <= solver.upper_limits[5]
     for plan in (planner.plan_line_t, planner.plan_ptp_t):
         with pytest.raises(IKError, match="goal_joints"):
             plan(Q_HOME, goal, velocity=10, acc_time=0.2, goal_joints=turned)

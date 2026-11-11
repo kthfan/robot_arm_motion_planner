@@ -43,11 +43,14 @@ IK branches
 -----------
 
 The TM5S has up to 8 analytical IK solutions per pose, plus ``2 pi`` variants
-of the joints whose range exceeds a full turn. ``solver.branch(q)`` labels a
-configuration with the signs ``(shoulder, elbow, wrist)``. Near the wrist
-singularity (``q5 ~ 0``) the label does not tell the two wrist postures apart,
-so LINE_T selects goals by joint-space distance by default
-(``goal_selection="closest"``).
+of the joints whose range exceeds a full turn (J1, J4, J5, J6: +-348.5 deg).
+``solver.branch(q)`` labels a configuration with the signs
+``(shoulder, elbow, wrist)``: elbow is the sign of ``q3`` and wrist the sign of
+``sin q5``, so ``q5`` and ``q5 - 2 pi`` are the same wrist posture. A
+*configuration family* is the branch label plus the ``2 pi`` turns of J1, J4, J5
+and J6. Near the wrist singularity (``q5 ~ 0`` or ``+-pi``) the label does not
+tell the two wrist postures apart, so LINE_T selects goals by joint-space
+distance by default (``goal_selection="closest"``).
 
 Waypoints
 ---------

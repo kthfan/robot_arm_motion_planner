@@ -70,7 +70,8 @@ class KinematicsSolver(ABC):
 
     def branch(self, q: Sequence[float]) -> tuple[int, int, int]:
         """(shoulder, elbow, wrist) configuration signs (+1 / -1) of ``q``; the
-        analytical IK solutions of a pose differ in it, up to 2 pi joint turns."""
+        analytical IK solutions of a pose differ in it, up to 2 pi joint turns
+        (of every joint whose range exceeds a full turn)."""
         raise NotImplementedError(f"{type(self).__name__} does not define IK branches")
 
     @abstractmethod

@@ -170,7 +170,9 @@ class SelfMotion:
         return list(best.values())
 
 
-_TURN_JOINTS = (0, 3, 5)
+# joints whose range exceeds a full turn on the TM5S (J1, J4, J5, J6: +-348.5 deg);
+# the 2 pi turn of each is part of the configuration family
+_TURN_JOINTS = (0, 3, 4, 5)
 
 
 @dataclass

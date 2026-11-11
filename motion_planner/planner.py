@@ -142,7 +142,7 @@ class MotionPlanner(ABC):
         reconfigurations first) are compared and the one with less joint
         travel is used. With ``goal_selection="branch"``, and
         always in "jump" mode: same IK branch (shoulder / elbow / wrist) and
-        within 180 deg on joints 1, 4 and 6. :class:`IKError` if the
+        within 180 deg on joints 1, 4, 5 and 6. :class:`IKError` if the
         goal pose has no such solution. The goal itself must always be
         reachable.
 
@@ -385,7 +385,7 @@ class KinematicMotionPlanner(MotionPlanner):
             closest = min(solutions, key=lambda q: float(np.max(np.abs(q - ref))))
             raise IKError(
                 f"no IK solution of the {motion} goal pose in the configuration of goal_joints "
-                f"(branch {self.solver.branch(ref)}, joints 1/4/6 within 180 deg); the closest "
+                f"(branch {self.solver.branch(ref)}, joints 1/4/5/6 within 180 deg); the closest "
                 f"solution differs by up to {math.degrees(np.max(np.abs(closest - ref))):.1f} deg"
             )
         return same, solutions

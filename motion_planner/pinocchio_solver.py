@@ -1,6 +1,7 @@
 """Pinocchio-backed kinematics solver."""
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Iterable, Optional, Sequence, Union
 
@@ -172,9 +173,13 @@ class PinocchioSolver(KinematicsSolver):
         ).copy()
 
     def branch(self, q: Sequence[float]) -> tuple[int, int, int]:
-        """Elbow = sign(q3), wrist = sign(q5); shoulder = side of joint 1's axis
+        """Elbow = sign(q3), wrist = sign(sin q5); shoulder = side of joint 1's axis
         the wrist point (axis 6 where it passes axis 5) is on, along the arm's
-        reach (perpendicular to joint 2's axis)."""
+        reach (perpendicular to joint 2's axis).
+
+        The wrist is singular at q5 = 0 and q5 = +-pi, so with q5 limits beyond
+        +-180 deg the wrist posture is the sign of sin q5 (q5 and q5 - 2 pi are
+        the same posture), not of q5."""
         q = np.asarray(q, dtype=float)
         pin.computeJointJacobians(self._model, self._data, q)
         axes, origins = [], []
@@ -188,7 +193,7 @@ class PinocchioSolver(KinematicsSolver):
         wrist_point = o6 + t * a6
         reach = np.cross(a2, a1)
         shoulder = 1 if (wrist_point - o1) @ reach >= 0.0 else -1
-        return shoulder, 1 if q[2] >= 0.0 else -1, 1 if q[4] >= 0.0 else -1
+        return shoulder, 1 if q[2] >= 0.0 else -1, 1 if math.sin(q[4]) >= 0.0 else -1
 
     def ik_analytical(self, target: np.ndarray) -> list[np.ndarray]:
         return [np.asarray(q, dtype=float) for q in self.analytical_ik.ik(target).Q]

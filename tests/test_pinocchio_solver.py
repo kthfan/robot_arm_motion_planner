@@ -221,7 +221,7 @@ def test_base_solver_jacobian_defaults_to_finite_differences(solver):
 
 
 def test_branch_tells_the_analytical_ik_solutions_apart():
-    # Each (shoulder, elbow, wrist) branch holds one solution up to 2 pi turns of q1/q4/q6.
+    # Each (shoulder, elbow, wrist) branch holds one solution up to 2 pi turns of q1/q4/q5/q6.
     s = PinocchioSolver(calibration=_calibrated())
     rng = np.random.default_rng(6)
     for _ in range(20):
@@ -236,8 +236,8 @@ def test_branch_tells_the_analytical_ik_solutions_apart():
         for members in groups.values():
             for x in members[1:]:
                 d = x - members[0]
-                np.testing.assert_allclose(d[[1, 2, 4]], 0.0, atol=1e-6)
-                turns = d[[0, 3, 5]] / (2 * np.pi)
+                np.testing.assert_allclose(d[[1, 2]], 0.0, atol=1e-6)
+                turns = d[[0, 3, 4, 5]] / (2 * np.pi)
                 np.testing.assert_allclose(turns, np.round(turns), atol=1e-6)
 
 
@@ -247,6 +247,17 @@ def test_branch_signs_follow_the_elbow_and_wrist_joints(solver):
     assert (elbow, wrist) == (1, 1)
     q[2], q[4] = -q[2], -q[4]
     assert solver.branch(q)[1:] == (-1, -1)
+
+
+def test_wrist_branch_is_the_same_for_q5_one_turn_apart(solver):
+    # q5 and q5 -+ 2 pi are the same wrist posture (J5 range exceeds a full turn)
+    q = Q_HOME.copy()
+    for q5 in (0.5, 2.5, -0.5, -2.5):
+        q[4] = q5
+        turned = q.copy()
+        turned[4] -= np.sign(q5) * 2 * np.pi
+        assert solver.branch(turned) == solver.branch(q)
+        np.testing.assert_allclose(solver.fk(turned), solver.fk(q), atol=1e-12)
 
 
 def test_analytical_ik_raises_when_eaik_cannot_decompose_the_model():

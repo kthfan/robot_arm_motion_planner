@@ -374,7 +374,7 @@ class LineSearch:
                             T, F = self.pose(ss[k]), self.solver.fk(qs[k])
                             e = wv * np.concatenate([T[:3, 3] - F[:3, 3], rotvec(T[:3, :3] @ F[:3, :3].T)])
                             J = wv[:, None] * self.solver.jacobian(qs[k])
-                            step = np.linalg.solve(w2 * (J.T @ J) + np.eye(6), w2 * (J.T @ e) + step)
+                            step = np.linalg.solve(w2 * (J.T @ J) + np.eye(len(step)), w2 * (J.T @ e) + step)
                         for lam in (1.0, 0.5):
                             cand = qs[k] + lam * step
                             if float(np.max(np.abs(cand - qs[k]))) < 1e-7:
@@ -1097,12 +1097,9 @@ class LineSearch:
         if at_limit:
             reasons.append("joint " + ", ".join(map(str, at_limit)) + " at its limit")
         if tr.sigma[-1] < self.window_sigma:
-            if abs(math.sin(q[4])) < 0.1:
-                reasons.append("wrist singularity (q5 ~ 0)")
-            elif abs(math.sin(q[2])) < 0.2:
-                reasons.append("elbow stretched (q3 ~ 0)")
-            else:
-                reasons.append("shoulder singularity")
+            v = np.abs(self.sm.weakest_direction(q))
+            joints = ", ".join(str(j + 1) for j in np.flatnonzero(v >= 0.3 * v.max()))
+            reasons.append(f"singularity: a motion of joints {joints} barely moves the TCP")
         if not self._ik_at(min(1.0, s + 2.0 ** -8)):
             reasons.append("no IK solution beyond it")
         return ", ".join(reasons) or "IK does not converge"

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- `KinematicsSolver.turn_joints`: the joints whose 2 pi turn is part of the configuration family are derived
+  from the joint limits (range above 2 pi) instead of the hard-coded TM5S joints 1, 4, 5, 6.
+- `SelfMotion` raises `NotImplementedError` for more than 6 joints (redundant arms are not supported) instead
+  of walking along the null space; `SelfMotion.weakest_direction`.
+- Held smoothing no longer assumes 6 joints (`np.eye(6)` in the deviation pull).
+- LINE_T failure messages name the joints of the weakest Jacobian direction at a singularity instead of
+  TM5S-specific wrist / elbow / shoulder guesses from `q5` and `q3`.
+
 ## 0.1.0
 
 First release as a standalone package, split out of RobotServer (`robot/kinematics`).

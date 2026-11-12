@@ -58,7 +58,14 @@ class SelfMotion:
         max_deviation: float,
         max_angle: float,
     ) -> None:
+        if solver.nq > 6:
+            raise NotImplementedError(
+                f"SelfMotion needs at most 6 joints, the solver has {solver.nq}: on a "
+                "redundant arm the Jacobian always has a null space, so the self-motion "
+                "is not tied to singularities and the IK solutions are not discrete branches"
+            )
         self.solver = solver
+        self.turn_joints = list(solver.turn_joints)
         self.rot_scale = linear_tolerance / angular_tolerance
         self.max_joint_step = max_joint_step
         self.max_deviation = max_deviation
@@ -72,6 +79,11 @@ class SelfMotion:
     def sigma_min(self, q: np.ndarray) -> float:
         """Smallest singular value of :meth:`jacobian` [m/rad]: distance to a singularity."""
         return float(np.linalg.svd(self.jacobian(q), compute_uv=False)[-1])
+
+    def weakest_direction(self, q: np.ndarray) -> np.ndarray:
+        """Unit joint direction of :meth:`sigma_min` (the joint motion that moves the
+        TCP least; the self-motion at a singularity)."""
+        return np.linalg.svd(self.jacobian(q))[2][-1]
 
     def error(self, q: np.ndarray, target: np.ndarray) -> np.ndarray:
         """Scaled pose error to ``target``; error(q + dq) ~ error(q) - jacobian(q) dq."""
@@ -117,7 +129,7 @@ class SelfMotion:
         q, v_prev, worst = np.asarray(q0, dtype=float), None, 0.0
         walk = [(q, 0.0)]
         for _ in range(int(math.ceil(4 * math.pi / step))):
-            v = np.linalg.svd(self.jacobian(q))[2][-1]
+            v = self.weakest_direction(q)
             if v_prev is None:
                 v = sign * v
             elif v @ v_prev < 0:
@@ -138,8 +150,8 @@ class SelfMotion:
 
     def family(self, q: np.ndarray, q_ref: np.ndarray) -> tuple:
         """Configuration family of ``q``: IK branch signs and the 2 pi turn of the
-        unbounded joints relative to ``q_ref``."""
-        turns = np.round((np.asarray(q) - q_ref)[list(_TURN_JOINTS)] / (2.0 * math.pi))
+        joints whose range exceeds a full turn (``solver.turn_joints``) relative to ``q_ref``."""
+        turns = np.round((np.asarray(q) - q_ref)[self.turn_joints] / (2.0 * math.pi))
         return tuple(self.solver.branch(q)) + tuple(int(t) for t in turns)
 
     def runs(self, q0: np.ndarray, target: np.ndarray) -> list[Run]:
@@ -168,11 +180,6 @@ class SelfMotion:
                     )
                 k = j + 1
         return list(best.values())
-
-
-# joints whose range exceeds a full turn on the TM5S (J1, J4, J5, J6: +-348.5 deg);
-# the 2 pi turn of each is part of the configuration family
-_TURN_JOINTS = (0, 3, 4, 5)
 
 
 @dataclass

@@ -8,6 +8,9 @@ import numpy as np
 
 IKSelector = Callable[[Sequence[np.ndarray], np.ndarray], np.ndarray]
 
+# [rad] how much a joint range must exceed 2 pi for the joint to have full turns
+TURN_MARGIN = 1e-3
+
 
 class IKError(RuntimeError):
     """Raised when no inverse-kinematics solution can be found."""
@@ -38,6 +41,15 @@ class KinematicsSolver(ABC):
     @property
     def nq(self) -> int:
         return len(self.lower_limits)
+
+    @property
+    def turn_joints(self) -> tuple[int, ...]:
+        """Indices of the joints whose range exceeds a full turn: ``q`` and
+        ``q +- 2 pi`` can both be within the limits, so the 2 pi turn of these
+        joints is part of the configuration family. Ranges within
+        :data:`TURN_MARGIN` of 2 pi (e.g. limits of exactly +-pi) do not count."""
+        span = np.asarray(self.upper_limits, dtype=float) - np.asarray(self.lower_limits, dtype=float)
+        return tuple(int(j) for j in np.flatnonzero(span > 2.0 * np.pi + TURN_MARGIN))
 
     @abstractmethod
     def fk(self, q: Sequence[float]) -> np.ndarray:

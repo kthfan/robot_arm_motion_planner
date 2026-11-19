@@ -489,6 +489,10 @@ class KinematicMotionPlanner(MotionPlanner):
                        if goal_joints is not None else "another goal configuration")
                     + " is used"
                 )
+        except PathDiscontinuityError as exc:
+            # other IK solutions of the start pose from which the line needs no reconfiguration
+            diag["start_configurations"] = [[float(x) for x in q] for q in exc.start_configurations]
+            raise
         finally:
             diag["search"] = _search_summary(search)
             timing["search"] = time.perf_counter() - t_start - timing["goal_filter"]

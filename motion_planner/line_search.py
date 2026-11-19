@@ -44,7 +44,18 @@ _NEWTON_TOL = 1e-9  # pose error [m, rad] of exact IK
 
 
 class PathDiscontinuityError(RuntimeError):
-    """Raised when a Cartesian path cannot be followed with continuous joint motion."""
+    """Raised when a Cartesian path cannot be followed with continuous joint motion.
+
+    ``start_configurations``: other IK solutions of the start pose from which
+    the whole line can be followed without reconfiguration (into an accepted
+    goal configuration), nearest to the start first (PTP_J time); empty if
+    there is none. Moving there first (e.g. PTP_J, the TCP pose stays the
+    same at both ends) makes the line plannable.
+    """
+
+    def __init__(self, message: str, start_configurations=()) -> None:
+        super().__init__(message)
+        self.start_configurations = [np.asarray(q, dtype=float) for q in start_configurations]
 
 
 @dataclass
@@ -1037,7 +1048,9 @@ class LineSearch:
         exc = self._failure(first)
         self.stats["failure_s"] = time.perf_counter() - t0
         if self.stats["timed_out"]:
-            exc = type(exc)(f"{exc} (the search stopped at its planning time budget)")
+            msg = f"{exc} (the search stopped at its planning time budget)"
+            exc = (PathDiscontinuityError(msg, exc.start_configurations)
+                   if isinstance(exc, PathDiscontinuityError) else type(exc)(msg))
         raise exc
 
     def _push_window(self, node: _Node, line: list, win: _Window, push) -> None:
@@ -1097,15 +1110,57 @@ class LineSearch:
         if at_limit:
             reasons.append("joint " + ", ".join(map(str, at_limit)) + " at its limit")
         if tr.sigma[-1] < self.window_sigma:
+            # closest first: the elbow can be stretched next to a nearly singular wrist
+            near = []
+            if abs(math.sin(q[2])) < 0.2:
+                near.append((abs(math.sin(q[2])) / 0.2,
+                             f"elbow stretched (q3 = {math.degrees(q[2]):.1f} deg)"))
             if abs(math.sin(q[4])) < 0.1:
-                reasons.append("wrist singularity (q5 ~ 0)")
-            elif abs(math.sin(q[2])) < 0.2:
-                reasons.append("elbow stretched (q3 ~ 0)")
-            else:
-                reasons.append("shoulder singularity")
-        if not self._ik_at(min(1.0, s + 2.0 ** -8)):
+                near.append((abs(math.sin(q[4])) / 0.1,
+                             f"wrist near its singularity (q5 = {math.degrees(q[4]):.1f} deg)"))
+            reasons += [text for _, text in sorted(near)] or ["shoulder singularity"]
+        ahead = self._ik_at(min(1.0, s + 2.0 ** -8))
+        if not ahead:
             reasons.append("no IK solution beyond it")
+        else:
+            gone = self._branch_gone(q, ahead)
+            if gone:
+                reasons.append(gone)
         return ", ".join(reasons) or "IK does not converge"
+
+    def _branch_gone(self, q: np.ndarray, ahead: list[np.ndarray]) -> Optional[str]:
+        """Why the IK branch of ``q`` cannot continue, judged by the IK solutions
+        ``ahead`` on the line (None if it has solutions there)."""
+        try:
+            b = tuple(self.solver.branch(q))
+            others = {tuple(self.solver.branch(x)) for x in ahead}
+        except NotImplementedError:
+            return None
+        if b in others:
+            return None
+        if not any(o[0] == b[0] and o[2] == b[2] for o in others):
+            return (f"beyond it the line is out of the arm's reach in this shoulder / wrist "
+                    f"posture (branch {b}); only another configuration continues")
+        return f"beyond it the line is reachable only with the other elbow (branch {b} ends)"
+
+    def start_alternatives(self) -> list[np.ndarray]:
+        """Other IK solutions of the start pose from which the line can be followed
+        without reconfiguration into an accepted goal configuration (the goal
+        branches traced back to s = 0), nearest to the start first: by PTP_J
+        time (max joint change over its velocity limit), then joint travel."""
+        vmax = np.asarray(self.solver.velocity_limits, dtype=float)
+        out: list[np.ndarray] = []
+        for b in self.goal_traces():
+            if not b.s or b.s[0] != 0.0:
+                continue
+            q = np.asarray(b.q[0], dtype=float)
+            if np.max(np.abs(q - self.q0)) < 1e-3:
+                continue  # the start configuration itself
+            if not any(np.max(np.abs(q - x)) < 1e-3 for x in out):
+                out.append(q)
+        out.sort(key=lambda q: (float(np.max(np.abs(q - self.q0) / vmax)),
+                                float(np.sum(np.abs(q - self.q0)))))
+        return out
 
     def _failure(self, tr: Optional[Trace]) -> Exception:
         s_end = tr.s[-1] if tr else 0.0
@@ -1116,11 +1171,21 @@ class LineSearch:
                 f"no IK solution on the LINE_T path near s={s_end:.4f} "
                 f"(the line leaves the reachable workspace; {why})"
             )
+        # past the time budget, the goal branches are not traced only for this hint
+        starts = [] if self._goal_traces is None and self.stats["timed_out"] \
+            else self.start_alternatives()
+        hint = ""
+        if starts:
+            deg = ", ".join(f"{math.degrees(x):.1f}" for x in starts[0])
+            hint = (f" From the start configuration [{deg}] deg, another IK solution of the "
+                    "start pose, the line runs without reconfiguration: move there first "
+                    "(e.g. PTP_J).")
         if self.mode == "raise":
             return PathDiscontinuityError(
                 f"LINE_T path needs discontinuous joint motion near s={s_end:.4f}: the "
                 f"start branch ends there ({why}); it crosses a singularity or a joint "
-                "limit blocks it (on_discontinuity 'hold' / 'jump' reconfigure)"
+                "limit blocks it (on_discontinuity 'hold' / 'jump' reconfigure)." + hint,
+                starts,
             )
         tried = []
         for win, reached, attached in self._tried:
@@ -1145,6 +1210,7 @@ class LineSearch:
             f"LINE_T path cannot be followed with the TCP held within "
             f"{self.sm.max_deviation * 1000:g} mm / {math.degrees(self.sm.max_angle):g} deg: "
             f"the start branch ends near s={s_end:.4f} ({why}); {goal_msg}; reconfigurations "
-            f"tried: {tried_msg}. Use on_discontinuity 'jump' (motion code 20) to allow a "
-            "joint jump."
+            f"tried: {tried_msg}.{hint} Use on_discontinuity 'jump' (motion code 20) to allow "
+            "a joint jump.",
+            starts,
         )

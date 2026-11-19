@@ -122,6 +122,7 @@ same warnings are issued through :mod:`warnings`.
   configuration) has no IK solution.
 * :class:`~motion_planner.planner.PathDiscontinuityError`: no continuous joint
   path along the line in the requested mode, or the search ran past
-  ``max_plan_time``.
+  ``max_plan_time``. Its ``start_configurations`` are the other IK solutions of
+  the start pose from which the line needs no reconfiguration (nearest first).
 * :class:`ValueError`: invalid arguments (speed % outside (0, 100], unknown
   mode, ``goal_joints`` of the wrong length, ...).

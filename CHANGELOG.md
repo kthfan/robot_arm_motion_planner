@@ -18,5 +18,10 @@ First release as a standalone package, split out of RobotServer (`robot/kinemati
 - Wrist branch label is `sign(sin q5)` and the 2 pi turn of J5 is part of the configuration family
   (J5 ranges beyond +-180 deg). Fixes jump-mode plans with `goal_joints` that ended in the other wrist
   posture.
+- `PathDiscontinuityError` diagnosis: an elbow stretched next to a nearly singular wrist is reported as
+  the elbow stretch (was "wrist singularity"), with the q3 / q5 angles, and whether the line is out of reach
+  beyond it in the start's shoulder / wrist posture. The error carries `start_configurations`: other IK
+  solutions of the start pose from which the line runs without reconfiguration, nearest (PTP_J time)
+  first; the message names the nearest and `diagnostics["start_configurations"]` lists them.
 - Tests for the package API, `RobustIK`, the scripts and the experiment harness. Two planner tests were
   updated for the current joint limits and smooth timing.

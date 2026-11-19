@@ -615,6 +615,52 @@ def test_hold_line_t_tries_next_to_a_singularity_where_no_flip_attaches_at_it(ro
     _assert_held_line(robot_planner, q0, goal, (0.15, 0.25))
 
 
+# Field case: the line runs past the elbow stretch (q3 -> 0) of the start's
+# shoulder / wrist posture at s ~0.9376 while q5 stays >= 2.6 deg, so a held
+# wrist flip tilts the TCP beyond the tolerance. In the other wrist posture the
+# whole line is reachable.
+_ELBOW_STRETCH_LINE = (
+    [2.59369493, 0.57279242, 1.72639844, 0.77474033, 0.27233825, -3.08763728],
+    [[-0.70636815, 0.00888022, 0.70778894, -0.32015957],
+     [0.70784296, 0.00668179, 0.70633823, 0.690893],
+     [0.00154315, 0.99993825, -0.0110056, 0.52693295],
+     [0.0, 0.0, 0.0, 1.0]],
+)
+
+
+@pytest.mark.parametrize("mode", ["raise", "hold"])
+def test_line_t_failure_names_the_elbow_stretch_and_a_start_that_works(robot_planner, mode):
+    q0, goal = (np.asarray(x, dtype=float) for x in _ELBOW_STRETCH_LINE)
+    diag = {}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with pytest.raises(PathDiscontinuityError) as info:
+            robot_planner.plan_line_t(q0, goal, velocity=100, acc_time=0.2,
+                                      on_discontinuity=mode, diagnostics=diag)
+    msg = str(info.value)
+    # the elbow, not the nearly singular wrist, ends the branch, and it ends for good
+    assert msg.index("elbow stretched") < msg.index("wrist near its singularity")
+    assert "out of the arm's reach in this shoulder / wrist posture" in msg
+    assert "From the start configuration" in msg
+    starts = info.value.start_configurations
+    assert starts and diag["start_configurations"] == [[float(x) for x in q] for q in starts]
+    solver = robot_planner.solver
+    vmax = solver.velocity_limits
+    assert [float(np.max(np.abs(q - q0) / vmax)) for q in starts] \
+        == sorted(float(np.max(np.abs(q - q0) / vmax)) for q in starts)
+    lin, ang = pose_distance(solver.fk(starts[0]), solver.fk(q0))
+    assert lin < 1e-6 and ang < 1e-6
+    # from the suggested start the line needs no reconfiguration
+    diag = {}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")  # raise mode at 100 %: the uniform slowdown
+        actions = robot_planner.plan_line_t(starts[0], goal, velocity=100, acc_time=0.2,
+                                            on_discontinuity=mode, diagnostics=diag)
+    assert diag["events"] == []
+    lin, ang = pose_distance(solver.fk(actions[-1].positions), goal)
+    assert lin < 1e-5 and ang < 1e-5
+
+
 def _assert_held_line(planner, q0, goal, flip_range):
     solver = planner.solver
     with pytest.warns(UserWarning, match="TCP held") as record:

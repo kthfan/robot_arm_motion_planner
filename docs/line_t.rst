@@ -63,7 +63,14 @@ flip the plan on tiny input changes. The search is bounded by
 ``LineSearch.max_flips``, ``max_expansions``, an effort budget, and the planner's
 ``max_plan_time``. When no plan exists,
 :class:`~motion_planner.planner.PathDiscontinuityError` explains where the
-start branch ends and why.
+start branch ends and why: a joint at its limit, the elbow stretched or the
+wrist near its singularity (closest first), and whether the line is out of reach
+beyond it in the start's shoulder / wrist posture. If another IK solution of the
+start pose follows the whole line without reconfiguration (a goal branch traced
+back to ``s = 0``), the message names the nearest one (by PTP_J time) and
+``exc.start_configurations`` lists them all (also
+``diagnostics["start_configurations"]``): move there first, e.g. with PTP_J,
+and plan the line from it.
 
 Held smoothing
 --------------

@@ -16,6 +16,9 @@ def main():
     ap.add_argument("src")
     ap.add_argument("--out", default=None)
     ap.add_argument("--cols", type=int, default=5)
+    ap.add_argument("--tick", type=float, default=0.1, help="tick spacing (m)")
+    ap.add_argument("--size", type=float, default=26, help="scatter marker size")
+    ap.add_argument("--only-nonempty", action="store_true", help="skip slices without valid points")
     args = ap.parse_args()
     d = np.load(args.src)
     xs, ys, zs, lv = d["xs"], d["ys"], d["zs"], d["levels"]
@@ -24,9 +27,10 @@ def main():
     step = xs[1] - xs[0]
     xlim = (xs[0] - step, xs[-1] + step)
     ylim = (ys[0] - step, ys[-1] + step)
-    xt = np.round(np.arange(xs[0], xs[-1] + 1e-9, 0.1), 1)  # 0.1 m ticks
-    yt = np.round(np.arange(ys[0], ys[-1] + 1e-9, 0.1), 1)
-    n = len(zs)
+    xt = np.round(np.arange(xs[0], xs[-1] + 1e-9, args.tick), 6)
+    yt = np.round(np.arange(ys[0], ys[-1] + 1e-9, args.tick), 6)
+    kz = [k for k in range(len(zs)) if valid[:, :, k].any()] if args.only_nonempty else list(range(len(zs)))
+    n = len(kz)
     rows = int(np.ceil(n / args.cols))
     fig, axes = plt.subplots(rows, args.cols, figsize=(6.6 * args.cols, 4.6 * rows),
                              sharex=True, sharey=True)
@@ -34,9 +38,10 @@ def main():
         if k >= n:
             ax.axis("off")
             continue
-        ix, iy = np.nonzero(valid[:, :, k])
-        ax.scatter(xs[ix], ys[iy], s=26, c="tab:blue")
-        ax.set_title(f"z = {zs[k]:+.1f} m  ({len(ix)} pts)", fontsize=11)
+        kk = kz[k]
+        ix, iy = np.nonzero(valid[:, :, kk])
+        ax.scatter(xs[ix], ys[iy], s=args.size, c="tab:blue")
+        ax.set_title(f"z = {zs[kk]:+.2f} m  ({len(ix)} pts)", fontsize=11)
         ax.set_xlim(xlim); ax.set_ylim(ylim)
         ax.set_xticks(xt); ax.set_yticks(yt)
         ax.set_aspect("equal")

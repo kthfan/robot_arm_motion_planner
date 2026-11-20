@@ -24,28 +24,29 @@ def main():
     step = xs[1] - xs[0]
     xlim = (xs[0] - step, xs[-1] + step)
     ylim = (ys[0] - step, ys[-1] + step)
-    xt = np.round(np.arange(np.ceil(xs[0] * 2) / 2, xs[-1] + 1e-9, 0.5), 1)
-    yt = np.round(np.arange(0, ys[-1] + 1e-9, 0.5), 1)
+    xt = np.round(np.arange(xs[0], xs[-1] + 1e-9, 0.1), 1)  # 0.1 m ticks
+    yt = np.round(np.arange(ys[0], ys[-1] + 1e-9, 0.1), 1)
     n = len(zs)
     rows = int(np.ceil(n / args.cols))
-    fig, axes = plt.subplots(rows, args.cols, figsize=(3.2 * args.cols, 2.9 * rows),
+    fig, axes = plt.subplots(rows, args.cols, figsize=(6.6 * args.cols, 4.6 * rows),
                              sharex=True, sharey=True)
     for k, ax in enumerate(axes.flat):
         if k >= n:
             ax.axis("off")
             continue
         ix, iy = np.nonzero(valid[:, :, k])
-        ax.scatter(xs[ix], ys[iy], s=14, c="tab:blue")
-        ax.set_title(f"z = {zs[k]:+.1f} m  ({len(ix)} pts)", fontsize=9)
+        ax.scatter(xs[ix], ys[iy], s=26, c="tab:blue")
+        ax.set_title(f"z = {zs[k]:+.1f} m  ({len(ix)} pts)", fontsize=11)
         ax.set_xlim(xlim); ax.set_ylim(ylim)
         ax.set_xticks(xt); ax.set_yticks(yt)
         ax.set_aspect("equal")
         ax.grid(alpha=0.3)
         ax.tick_params(labelbottom=True, labelleft=True, labelsize=7)
+        plt.setp(ax.get_xticklabels(), rotation=90)
     fig.supxlabel("x (m)"); fig.supylabel("y (m)")
-    fig.suptitle(f"Valid points per z slice ({int(valid.sum())} total)")
-    fig.tight_layout()
-    fig.savefig(out, dpi=150)
+    fig.suptitle(f"Valid points per z slice ({int(valid.sum())} total)", fontsize=18)
+    fig.tight_layout(rect=(0.015, 0.015, 1, 0.975), h_pad=2.5, w_pad=1.5)
+    fig.savefig(out, dpi=100)
     print("wrote", out)
 
 

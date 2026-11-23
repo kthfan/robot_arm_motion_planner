@@ -48,25 +48,14 @@ def test_line_json_reaches_the_goal(plan_motion, capsys):
                                [5, 20, 65, 11, 86, 6], atol=0.5)
 
 
-def test_line_uniform_speed_flag(plan_motion, capsys):
-    goal = _goal_deg_mm(plan_motion, capsys, ["5", "20", "65", "11", "86", "6"])
-    assert plan_motion.main(["line", "--q0", *Q0_DEG, "--goal", *goal, "--deg", "--mm",
-                             "--speed", "10", "--uniform-speed", "--json"]) == 0
-    out = json.loads(capsys.readouterr().out)
-    assert out["status"] == "ok"
-    info = out["diagnostics"]["uniform_speed"]
-    assert all(w["velocity"] == info["velocity"] for w in out["waypoints"])
-    assert all(w["acc_time"] >= 0.1 for w in out["waypoints"])
-
-
 def test_line_min_acc_time_flag(plan_motion, capsys):
     goal = _goal_deg_mm(plan_motion, capsys, ["5", "20", "65", "11", "86", "6"])
     assert plan_motion.main(["line", "--q0", *Q0_DEG, "--goal", *goal, "--deg", "--mm",
-                             "--speed", "10", "--acc-time", "0.05", "--min-acc-time", "0.25",
+                             "--speed", "10", "--acc-time", "0.05", "--min-acc-time", "0.45",
                              "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert "uniform_speed" not in out["diagnostics"]
-    assert all(w["acc_time"] >= 0.25 for w in out["waypoints"])
+    assert out["waypoints"]
+    assert all(w["acc_time"] >= 0.45 for w in out["waypoints"])
 
 
 def test_unreachable_goal_fails_with_exit_code_1(plan_motion, capsys):

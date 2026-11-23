@@ -2,15 +2,14 @@
 
 ## Unreleased
 
-- LINE_T `uniform_speed` mode, set on the planner (`KinematicMotionPlanner(uniform_speed=True)`;
-  `plan_motion.py line --uniform-speed`): every waypoint gets the same PTP_J speed %, the whole motion long,
-  so the motors do not speed up and slow down from segment to segment. The speed % keeps the requested line
-  duration, lowered (with a warning) to stay within 100 % and the joint acceleration limits. Each waypoint's
-  `acc_time` covers the joint velocity changes at its segment within the acceleration limits (the requested
-  `acc_time` at least at the first and last waypoint) and is at least 0.1 s by default. Off by default.
-- `min_acc_time` planner setting (`plan_motion.py --min-acc-time`): shortest `acc_time` of every waypoint, for
-  LINE_T in any mode and PTP_T, independent of `uniform_speed`; may exceed the segment duration. Default None:
-  0.1 s with `uniform_speed`, no minimum without (unchanged behaviour).
+Defaults changed against LINE_T jitter (motors speeding up and slowing down at every waypoint):
+
+- `min_acc_time` planner setting, default 0.3 s (`plan_motion.py --min-acc-time`): shortest `acc_time` of every
+  waypoint, for LINE_T in any mode and PTP_T. Near a singularity the segments last only a few milliseconds and
+  their `acc_time`, capped at the segment duration, was just as short. The minimum may exceed the segment
+  duration; `min_acc_time=0` restores the former behaviour.
+- `simplify_held` is on by default: held reconfigurations are merged into fewer, longer PTP_J segments, which
+  the longer `acc_time` would otherwise slow down too much.
 
 ## 0.1.0
 

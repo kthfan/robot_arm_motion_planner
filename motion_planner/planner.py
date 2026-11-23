@@ -223,33 +223,19 @@ class KinematicMotionPlanner(MotionPlanner):
             route already has (at least ``linear_tolerance`` /
             ``angular_tolerance``). Fewer, longer PTP_J segments: the robot
             needs a minimum time per segment, which caps the speed of routes
-            made of many short segments.
+            made of many short segments. On by default, because
+            ``min_acc_time`` makes short segments run slower.
         held_smoothing_batch: Smooth every other waypoint at once (much faster;
             False: one waypoint after the other, the earlier behaviour).
         max_plan_time: Planning time budget of one LINE_T motion [s] (None: no
             budget). Past it the search stops and the motion fails instead of
             searching for minutes.
-        uniform_speed: True: every LINE_T waypoint gets the same PTP_J
-            speed %, the whole motion long, so the motors do not speed up and
-            slow down from one segment to the next (jitter). The robot ramps
-            up and down with the waypoints' ``acc_time``. The speed % is chosen
-            so that the line takes as long as at the requested TCP speed; the
-            TCP is then faster where the joints move little per mm and slower
-            where they move much (near a singularity). It is lowered, with a
-            warning, where 100 % or the joint acceleration limits at the
-            waypoints would not allow it. Replaces ``smooth_timing`` and the
-            uniform slowdown of "raise" mode; jumps and reconfigurations run
-            at the same speed %. Each waypoint's ``acc_time`` is long enough
-            for the joint velocity change at both ends of its segment within
-            ``max_joint_acceleration`` (from / to rest at the first / last
-            waypoint, where it is also at least the requested ``acc_time``),
-            and at least ``min_acc_time`` (0.1 s by default). It may exceed the
-            segment duration.
         min_acc_time: Shortest ``acc_time`` [s] of every waypoint the planner
-            returns (LINE_T in any mode, and PTP_T), set independently of
-            ``uniform_speed``. A shorter ``acc_time`` is raised to it, also
-            where that makes it longer than the segment. None (default): 0.1 s
-            with ``uniform_speed``, no minimum without.
+            returns (LINE_T in any mode, and PTP_T). A shorter ``acc_time`` is
+            raised to it, also where that makes it longer than the segment.
+            Very short ramps on the short LINE_T segments make the motors
+            speed up and slow down at every waypoint (jitter). 0: no minimum
+            (``acc_time`` at most the segment duration, the former behaviour).
     """
 
     def __init__(
@@ -276,9 +262,8 @@ class KinematicMotionPlanner(MotionPlanner):
         held_smoothing_batch: bool = True,
         max_plan_time: Optional[float] = 30.0,
         timing_on_dense: bool = True,
-        simplify_held: bool = False,
-        uniform_speed: bool = False,
-        min_acc_time: Optional[float] = None,
+        simplify_held: bool = True,
+        min_acc_time: float = 0.3,
     ) -> None:
         if goal_selection not in GOAL_SELECTIONS:
             raise ValueError(f"goal_selection must be one of {GOAL_SELECTIONS}, got {goal_selection!r}")
@@ -290,8 +275,8 @@ class KinematicMotionPlanner(MotionPlanner):
             raise ValueError(f"max_flip_deviation must be >= 0 m, got {max_flip_deviation}")
         if not max_flip_angle >= 0.0:
             raise ValueError(f"max_flip_angle must be >= 0 rad, got {max_flip_angle}")
-        if min_acc_time is not None and not min_acc_time >= 0.0:
-            raise ValueError(f"min_acc_time must be >= 0 s or None, got {min_acc_time}")
+        if not min_acc_time >= 0.0:
+            raise ValueError(f"min_acc_time must be >= 0 s, got {min_acc_time}")
         if not max_held_length >= 0.0:
             raise ValueError(f"max_held_length must be >= 0 m, got {max_held_length}")
         self.solver = solver
@@ -316,8 +301,7 @@ class KinematicMotionPlanner(MotionPlanner):
         self.max_plan_time = max_plan_time
         self.timing_on_dense = bool(timing_on_dense)
         self.simplify_held = bool(simplify_held)
-        self.uniform_speed = bool(uniform_speed)
-        self.min_acc_time = None if min_acc_time is None else float(min_acc_time)
+        self.min_acc_time = float(min_acc_time)
         if max_joint_acceleration is None:
             self.max_joint_acceleration = np.asarray(solver.velocity_limits) / 0.2
         else:
@@ -327,12 +311,6 @@ class KinematicMotionPlanner(MotionPlanner):
 
     def fk(self, q: Sequence[float]) -> np.ndarray:
         return self.solver.fk(q)
-
-    def _acc_time_floor(self) -> float:
-        """Shortest ``acc_time`` of a returned waypoint (see ``min_acc_time``)."""
-        if self.min_acc_time is not None:
-            return self.min_acc_time
-        return 0.1 if self.uniform_speed else 0.0
 
     # ------------------------------------------------------------ PTP_T
 
@@ -365,7 +343,7 @@ class KinematicMotionPlanner(MotionPlanner):
             diagnostics["n_ik_solutions"] = len(solutions)
         return [
             JointWaypoint([float(x) for x in q], velocity,
-                          max(float(acc_time), self._acc_time_floor()),
+                          max(float(acc_time), self.min_acc_time),
                           blend_percentage, fine_goal, blocked)
         ]
 
@@ -555,19 +533,7 @@ class KinematicMotionPlanner(MotionPlanner):
         ss = [0.0] + [s for s, _, _ in samples]
         jumps = np.array([kind == JUMP or (kind != LINE and s <= s_prev)
                           for (s, _, kind), s_prev in zip(samples, ss)], dtype=bool)
-        uniform = self.uniform_speed
-        if uniform:
-            # One PTP_J speed % for every waypoint, the whole motion long.
-            dts, acc_times, info = self._uniform_timing(dqs, nominal, acc_time)
-            diag["uniform_speed"] = info
-            if info["velocity"] < info["requested_velocity"] * (1.0 - 1e-6):
-                warn(
-                    f"LINE_T uniform speed {info['velocity']:.1f}% PTP_J instead of "
-                    f"{info['requested_velocity']:.1f}% (limited by {info['limited_by']}): "
-                    "slower than the requested TCP speed"
-                )
-            scale = 1.0
-        elif reconfigure and self.smooth_timing:
+        if reconfigure and self.smooth_timing:
             # One speed profile along the line within the joint velocity and
             # acceleration limits: slow sections are entered and left gradually.
             if self.timing_on_dense and len(dense) != len(samples):
@@ -605,22 +571,17 @@ class KinematicMotionPlanner(MotionPlanner):
         for i, q in enumerate(qs[1:]):
             dq = np.abs(dqs[i])
             # TM PTP: segment time = max_j |dq_j| / (pct/100 * vmax_j)
-            if uniform:
-                # one speed %; acc_time from the velocity changes, not capped
-                pct, acc = info["velocity"], float(acc_times[i])
-            else:
-                pct = velocity if jumps[i] else 100.0 * float(np.max(dq / vmax)) / dts[i]
-                capped += pct > 100.0 + 1e-9
-                pct = min(max(pct, self.min_velocity), 100.0)
-                duration = float(np.max(dq / (pct / 100.0 * vmax)))
-                ramp = acc_time if jumps[i] else acc_time * scale
-                acc = max(min(ramp, duration), self._acc_time_floor())
+            pct = velocity if jumps[i] else 100.0 * float(np.max(dq / vmax)) / dts[i]
+            capped += pct > 100.0 + 1e-9
+            pct = min(max(pct, self.min_velocity), 100.0)
+            duration = float(np.max(dq / (pct / 100.0 * vmax)))
+            ramp = acc_time if jumps[i] else acc_time * scale
             is_last = i == last
             actions.append(
                 JointWaypoint(
                     [float(x) for x in q],
                     pct,
-                    acc,
+                    max(min(ramp, duration), self.min_acc_time),
                     blend_percentage if is_last else 100,
                     fine_goal if is_last else False,
                     blocked if is_last else False,
@@ -737,71 +698,6 @@ class KinematicMotionPlanner(MotionPlanner):
             ramps = (2.0 * peak * peak - w0 * w0 - w1 * w1) / (2.0 * a)
             dts[i] = (peak - w0) / a + (peak - w1) / a + max(1.0 - ramps, 0.0) / peak
         return dts
-
-    def _uniform_timing(
-        self,
-        dqs: np.ndarray,
-        nominal: float,
-        acc_time: float,
-    ) -> tuple[np.ndarray, np.ndarray, dict]:
-        """Segment durations and ``acc_time`` at one PTP_J speed % (``uniform_speed``).
-
-        A PTP_J segment at speed % ``p`` lasts ``m_i / (p / 100)`` with
-        ``m_i = max_j |dq_j| / vmax_j``. ``p`` makes the motion as long as the
-        line's cruise at the requested TCP speed (``nominal``), at most 100 %,
-        and low enough that the joint velocity change at each waypoint (which
-        grows with ``p**2``) stays within the acceleration limits.
-
-        A segment's ``acc_time`` covers the joint velocity changes at both of
-        its ends within the acceleration limits (from rest at the start, to
-        rest at the end, where it is also at least ``acc_time``), and is at
-        least ``min_acc_time``.
-
-        Returns the durations, the ``acc_time`` per segment and a diagnostics dict.
-        """
-        vmax = np.asarray(self.solver.velocity_limits, dtype=float)
-        amax = np.asarray(self.max_joint_acceleration, dtype=float)
-        tiny = 1e-12
-        n = len(dqs)
-        m = np.max(np.abs(dqs) / vmax, axis=1)
-        total = float(np.sum(m))
-        requested = 100.0 * total / max(nominal, tiny)
-        p, limited_by = requested, None
-        if p > 100.0:
-            p, limited_by = 100.0, "velocity"
-        # joint velocities at 100 %, and their change through each inner waypoint
-        moving = m > tiny
-        vel100 = np.zeros_like(dqs)
-        vel100[moving] = dqs[moving] / m[moving, None]
-        if np.count_nonzero(moving) > 1:
-            tm = m[moving]
-            span = 0.5 * (tm[:-1] + tm[1:])
-            acc = np.abs(np.diff(vel100[moving], axis=0)) / span[:, None]
-            ratio = float(np.max(acc / amax))
-            if ratio > tiny:
-                p_acc = 100.0 / math.sqrt(ratio)
-                if p_acc < p:
-                    p, limited_by = p_acc, "acceleration"
-        if p < self.min_velocity:
-            p, limited_by = self.min_velocity, "min_velocity"
-        rate = p / 100.0
-        dts = m / rate
-        # acc_time: time for the joint velocity change at both ends of a segment
-        vel = vel100 * rate
-        padded = np.vstack([np.zeros(dqs.shape[1]), vel, np.zeros(dqs.shape[1])])
-        change = np.max(np.abs(np.diff(padded, axis=0)) / amax, axis=1)  # per waypoint
-        acc_times = np.maximum(change[:-1], change[1:])
-        acc_times[0] = max(acc_times[0], acc_time)
-        acc_times[-1] = max(acc_times[-1], acc_time)
-        acc_times = np.maximum(acc_times, self._acc_time_floor())
-        info = {
-            "velocity": float(p),
-            "requested_velocity": float(requested),
-            "limited_by": limited_by,
-            "acc_time_min": float(np.min(acc_times)) if n else 0.0,
-            "acc_time_max": float(np.max(acc_times)) if n else 0.0,
-        }
-        return dts, acc_times, info
 
     def _time_scale(self, dqs: np.ndarray, dts: np.ndarray) -> float:
         """Smallest uniform time stretch keeping joint velocity/acceleration in limits.

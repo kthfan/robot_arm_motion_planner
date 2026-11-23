@@ -87,8 +87,9 @@ Simplification
 With ``simplify_line``, waypoints on the line are dropped when their neighbours
 can be joined directly within the tolerances and ``max_joint_step``. The robot
 then gets fewer, longer PTP_J segments. Jumps are always kept. Held routes are
-also merged only with ``simplify_held``. Use it when the controller's minimum
-time per segment caps the speed of routes made of many short segments.
+also merged with ``simplify_held`` (on by default). The controller's minimum
+time per segment, and ``min_acc_time`` (see below), cap the speed of routes
+made of many short segments, so they would run too slowly unmerged.
 
 Timing
 ------
@@ -112,41 +113,13 @@ The nominal duration is the slower of translation at
 Each segment's speed % is then
 ``100 * max_j(|dq_j| / vmax_j) / duration``, clipped to
 [``min_velocity``, 100]. Segments clipped at 100 % are reported as *capped*.
-A segment's ``acc_time`` is the requested one, at most the segment duration.
 
-``min_acc_time`` (CLI ``--min-acc-time``) sets the shortest ``acc_time`` of
-every waypoint, in every mode and for PTP_T, with or without
-``uniform_speed``. A shorter ``acc_time`` is raised to it, also beyond the
-segment duration. The default ``None`` means 0.1 s with ``uniform_speed`` and
-no minimum without.
-
-Uniform speed
-~~~~~~~~~~~~~
-
-The profiles above give every segment its own speed %, and near a
-singularity the speed % can change a lot from one segment to the next. On the
-robot, the motors then speed up and slow down at every waypoint (jitter).
-A planner built with ``KinematicMotionPlanner(..., uniform_speed=True)`` (CLI
-``--uniform-speed``) instead gives **every waypoint the same PTP_J speed %**,
-the whole motion long, including the first and the last one:
-
-* Held reconfigurations and jumps run at the same speed %.
-* That value makes the line take as long as at the requested TCP speed. The
-  TCP is then faster where the joints move little per mm and slower where they
-  move much (near a singularity); the joint path, and so the TCP path, are the
-  same as with the default timing.
-* It is lowered, with a warning, if it would exceed 100 % or the joint
-  acceleration limits at the waypoints.
-* The robot ramps with each waypoint's ``acc_time``. It is long enough for the
-  joint velocity change at both ends of the segment within
-  ``max_joint_acceleration``: from rest at the first waypoint and to rest at
-  the last one, where it is also at least the requested ``acc_time``. It is
-  never shorter than ``min_acc_time`` (0.1 s by default with
-  ``uniform_speed``), and unlike the default timing it may be longer than the
-  segment.
-* ``diagnostics["uniform_speed"]`` holds the speed % used, the speed % the
-  requested TCP speed would need, what limited it, and the range of
-  ``acc_time``.
+Each segment's ``acc_time`` is the requested one, at most the segment
+duration, and then at least ``min_acc_time`` (0.3 s; CLI ``--min-acc-time``).
+Near a singularity the segments last only a few milliseconds, and ramps that
+short made the motors speed up and slow down at every waypoint (jitter). The
+minimum also applies to PTP_T and may exceed the segment duration;
+``min_acc_time=0`` restores the former cap.
 
 Tuning summary
 --------------
@@ -163,15 +136,13 @@ Parameter                       Default                Effect
 ``goal_selection``              ``"closest"``          goal by joint distance or IK branch
 ``smooth_timing``               True                   one speed profile (hold / jump)
 ``simplify_line``               True                   fewer PTP_J segments
-``simplify_held``               False                  also merge held routes
+``simplify_held``               True                   also merge held routes
 ``held_smoothing``              10                     smoothing sweeps (0: off)
 ``held_smoothing_tolerance``    0.5                    share of the flip tolerance used
 ``held_deviation_weight``       0.1                    pull of held routes toward the line
 ``held_smoothing_batch``        True                   red-black smoothing
 ``timing_on_dense``             True                   time before simplification
-``uniform_speed``               False                  one speed % for the whole line
-``min_acc_time``                None                   shortest acc_time of every waypoint
-                                                       (None: 0.1 s with uniform_speed)
 ``max_plan_time``               30 s                   planning budget (None: none)
 ``min_velocity``                1 %                    lowest PTP_J speed %
+``min_acc_time``                0.3 s                  shortest acc_time (0: none)
 ==============================  =====================  =======================================

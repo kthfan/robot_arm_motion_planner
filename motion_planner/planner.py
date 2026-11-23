@@ -243,10 +243,13 @@ class KinematicMotionPlanner(MotionPlanner):
             for the joint velocity change at both ends of its segment within
             ``max_joint_acceleration`` (from / to rest at the first / last
             waypoint, where it is also at least the requested ``acc_time``),
-            and at least ``uniform_min_acc_time``. It may exceed the segment
-            duration.
-        uniform_min_acc_time: Shortest ``acc_time`` [s] of a waypoint with
-            ``uniform_speed``.
+            and at least ``min_acc_time`` (0.1 s by default). It may exceed the
+            segment duration.
+        min_acc_time: Shortest ``acc_time`` [s] of every waypoint the planner
+            returns (LINE_T in any mode, and PTP_T), set independently of
+            ``uniform_speed``. A shorter ``acc_time`` is raised to it, also
+            where that makes it longer than the segment. None (default): 0.1 s
+            with ``uniform_speed``, no minimum without.
     """
 
     def __init__(
@@ -275,7 +278,7 @@ class KinematicMotionPlanner(MotionPlanner):
         timing_on_dense: bool = True,
         simplify_held: bool = False,
         uniform_speed: bool = False,
-        uniform_min_acc_time: float = 0.1,
+        min_acc_time: Optional[float] = None,
     ) -> None:
         if goal_selection not in GOAL_SELECTIONS:
             raise ValueError(f"goal_selection must be one of {GOAL_SELECTIONS}, got {goal_selection!r}")
@@ -287,8 +290,8 @@ class KinematicMotionPlanner(MotionPlanner):
             raise ValueError(f"max_flip_deviation must be >= 0 m, got {max_flip_deviation}")
         if not max_flip_angle >= 0.0:
             raise ValueError(f"max_flip_angle must be >= 0 rad, got {max_flip_angle}")
-        if not uniform_min_acc_time >= 0.0:
-            raise ValueError(f"uniform_min_acc_time must be >= 0 s, got {uniform_min_acc_time}")
+        if min_acc_time is not None and not min_acc_time >= 0.0:
+            raise ValueError(f"min_acc_time must be >= 0 s or None, got {min_acc_time}")
         if not max_held_length >= 0.0:
             raise ValueError(f"max_held_length must be >= 0 m, got {max_held_length}")
         self.solver = solver
@@ -314,7 +317,7 @@ class KinematicMotionPlanner(MotionPlanner):
         self.timing_on_dense = bool(timing_on_dense)
         self.simplify_held = bool(simplify_held)
         self.uniform_speed = bool(uniform_speed)
-        self.uniform_min_acc_time = float(uniform_min_acc_time)
+        self.min_acc_time = None if min_acc_time is None else float(min_acc_time)
         if max_joint_acceleration is None:
             self.max_joint_acceleration = np.asarray(solver.velocity_limits) / 0.2
         else:
@@ -324,6 +327,12 @@ class KinematicMotionPlanner(MotionPlanner):
 
     def fk(self, q: Sequence[float]) -> np.ndarray:
         return self.solver.fk(q)
+
+    def _acc_time_floor(self) -> float:
+        """Shortest ``acc_time`` of a returned waypoint (see ``min_acc_time``)."""
+        if self.min_acc_time is not None:
+            return self.min_acc_time
+        return 0.1 if self.uniform_speed else 0.0
 
     # ------------------------------------------------------------ PTP_T
 
@@ -355,7 +364,8 @@ class KinematicMotionPlanner(MotionPlanner):
         if diagnostics is not None:
             diagnostics["n_ik_solutions"] = len(solutions)
         return [
-            JointWaypoint([float(x) for x in q], velocity, acc_time,
+            JointWaypoint([float(x) for x in q], velocity,
+                          max(float(acc_time), self._acc_time_floor()),
                           blend_percentage, fine_goal, blocked)
         ]
 
@@ -604,7 +614,7 @@ class KinematicMotionPlanner(MotionPlanner):
                 pct = min(max(pct, self.min_velocity), 100.0)
                 duration = float(np.max(dq / (pct / 100.0 * vmax)))
                 ramp = acc_time if jumps[i] else acc_time * scale
-                acc = min(ramp, duration)
+                acc = max(min(ramp, duration), self._acc_time_floor())
             is_last = i == last
             actions.append(
                 JointWaypoint(
@@ -745,7 +755,7 @@ class KinematicMotionPlanner(MotionPlanner):
         A segment's ``acc_time`` covers the joint velocity changes at both of
         its ends within the acceleration limits (from rest at the start, to
         rest at the end, where it is also at least ``acc_time``), and is at
-        least ``uniform_min_acc_time``.
+        least ``min_acc_time``.
 
         Returns the durations, the ``acc_time`` per segment and a diagnostics dict.
         """
@@ -783,7 +793,7 @@ class KinematicMotionPlanner(MotionPlanner):
         acc_times = np.maximum(change[:-1], change[1:])
         acc_times[0] = max(acc_times[0], acc_time)
         acc_times[-1] = max(acc_times[-1], acc_time)
-        acc_times = np.maximum(acc_times, self.uniform_min_acc_time)
+        acc_times = np.maximum(acc_times, self._acc_time_floor())
         info = {
             "velocity": float(p),
             "requested_velocity": float(requested),

@@ -112,6 +112,13 @@ The nominal duration is the slower of translation at
 Each segment's speed % is then
 ``100 * max_j(|dq_j| / vmax_j) / duration``, clipped to
 [``min_velocity``, 100]. Segments clipped at 100 % are reported as *capped*.
+A segment's ``acc_time`` is the requested one, at most the segment duration.
+
+``min_acc_time`` (CLI ``--min-acc-time``) sets the shortest ``acc_time`` of
+every waypoint, in every mode and for PTP_T, with or without
+``uniform_speed``. A shorter ``acc_time`` is raised to it, also beyond the
+segment duration. The default ``None`` means 0.1 s with ``uniform_speed`` and
+no minimum without.
 
 Uniform speed
 ~~~~~~~~~~~~~
@@ -134,8 +141,9 @@ the whole motion long, including the first and the last one:
   joint velocity change at both ends of the segment within
   ``max_joint_acceleration``: from rest at the first waypoint and to rest at
   the last one, where it is also at least the requested ``acc_time``. It is
-  never shorter than ``uniform_min_acc_time`` (0.1 s), and unlike the default
-  timing it may be longer than the segment.
+  never shorter than ``min_acc_time`` (0.1 s by default with
+  ``uniform_speed``), and unlike the default timing it may be longer than the
+  segment.
 * ``diagnostics["uniform_speed"]`` holds the speed % used, the speed % the
   requested TCP speed would need, what limited it, and the range of
   ``acc_time``.
@@ -162,7 +170,8 @@ Parameter                       Default                Effect
 ``held_smoothing_batch``        True                   red-black smoothing
 ``timing_on_dense``             True                   time before simplification
 ``uniform_speed``               False                  one speed % for the whole line
-``uniform_min_acc_time``        0.1 s                  shortest acc_time with uniform_speed
+``min_acc_time``                None                   shortest acc_time of every waypoint
+                                                       (None: 0.1 s with uniform_speed)
 ``max_plan_time``               30 s                   planning budget (None: none)
 ``min_velocity``                1 %                    lowest PTP_J speed %
 ==============================  =====================  =======================================

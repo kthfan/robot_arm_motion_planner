@@ -59,6 +59,16 @@ def test_line_uniform_speed_flag(plan_motion, capsys):
     assert all(w["acc_time"] >= 0.1 for w in out["waypoints"])
 
 
+def test_line_min_acc_time_flag(plan_motion, capsys):
+    goal = _goal_deg_mm(plan_motion, capsys, ["5", "20", "65", "11", "86", "6"])
+    assert plan_motion.main(["line", "--q0", *Q0_DEG, "--goal", *goal, "--deg", "--mm",
+                             "--speed", "10", "--acc-time", "0.05", "--min-acc-time", "0.25",
+                             "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert "uniform_speed" not in out["diagnostics"]
+    assert all(w["acc_time"] >= 0.25 for w in out["waypoints"])
+
+
 def test_unreachable_goal_fails_with_exit_code_1(plan_motion, capsys):
     rc = plan_motion.main(["line", "--q0", *Q0_DEG, "--goal", "5000", "0", "0", "180", "0", "0",
                            "--deg", "--mm"])

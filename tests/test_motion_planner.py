@@ -800,7 +800,7 @@ def _check_uniform(planner, solver, q0, actions, diag, acc_time):
     pct = diag["uniform_speed"]["velocity"]
     assert all(a.velocity == pct for a in actions)  # the whole motion at one speed %
     acc = np.array([a.acc_time for a in actions])
-    assert np.all(acc >= planner.uniform_min_acc_time)
+    assert np.all(acc >= planner._acc_time_floor())
     assert acc[0] >= acc_time and acc[-1] >= acc_time
     # each acc_time covers the joint velocity change at both ends of its segment
     need = _velocity_changes(solver, q0, actions, planner.max_joint_acceleration)
@@ -811,7 +811,7 @@ def _check_uniform(planner, solver, q0, actions, diag, acc_time):
 
 def test_uniform_speed_is_off_by_default(planner):
     assert planner.uniform_speed is False
-    assert planner.uniform_min_acc_time == 0.1
+    assert planner.min_acc_time is None and planner._acc_time_floor() == 0.0
 
 
 def test_uniform_speed_runs_the_whole_line_at_one_speed_percentage(uniform_planner, solver):
@@ -832,13 +832,41 @@ def test_uniform_speed_runs_the_whole_line_at_one_speed_percentage(uniform_plann
     assert len({a.velocity for a in default}) > 1
 
 
-def test_uniform_speed_acc_time_is_at_least_uniform_min_acc_time(solver):
-    planner = KinematicMotionPlanner(solver, uniform_speed=True, uniform_min_acc_time=0.3)
+def test_uniform_speed_acc_time_is_at_least_min_acc_time(solver, uniform_planner):
+    assert uniform_planner.min_acc_time is None and uniform_planner._acc_time_floor() == 0.1
     goal = _shifted_goal(solver, Q_HOME, (0.1, 0.1, -0.05))
+    actions = uniform_planner.plan_line_t(Q_HOME, goal, velocity=10, acc_time=0.05)
+    assert min(a.acc_time for a in actions) >= 0.1
+    planner = KinematicMotionPlanner(solver, uniform_speed=True, min_acc_time=0.3)
     actions = planner.plan_line_t(Q_HOME, goal, velocity=10, acc_time=0.05)
     assert min(a.acc_time for a in actions) >= 0.3
-    with pytest.raises(ValueError, match="uniform_min_acc_time"):
-        KinematicMotionPlanner(solver, uniform_min_acc_time=-0.1)
+    # min_acc_time 0 removes the 0.1 s default of uniform_speed
+    planner = KinematicMotionPlanner(solver, uniform_speed=True, min_acc_time=0.0)
+    actions = planner.plan_line_t(Q_HOME, goal, velocity=10, acc_time=0.05)
+    assert min(a.acc_time for a in actions) < 0.1
+
+
+@pytest.mark.parametrize("mode", ["raise", "hold"])
+def test_min_acc_time_works_without_uniform_speed(solver, mode):
+    goal = _shifted_goal(solver, Q_HOME, (0.1, 0.1, -0.05))
+    default = KinematicMotionPlanner(solver).plan_line_t(
+        Q_HOME, goal, velocity=10, acc_time=0.05, on_discontinuity=mode)
+    planner = KinematicMotionPlanner(solver, min_acc_time=0.15)
+    assert planner.uniform_speed is False
+    actions = planner.plan_line_t(Q_HOME, goal, velocity=10, acc_time=0.05, on_discontinuity=mode)
+    # same timing, only acc_time raised to the minimum (also beyond the segment duration)
+    assert [(a.positions, a.velocity) for a in actions] == [(a.positions, a.velocity) for a in default]
+    assert all(a.acc_time == max(d.acc_time, 0.15) for a, d in zip(actions, default))
+    assert any(d.acc_time < 0.15 for d in default)
+    ptp = planner.plan_ptp_t(Q_HOME, goal, velocity=10, acc_time=0.05)
+    assert ptp[0].acc_time == 0.15
+    assert KinematicMotionPlanner(solver).plan_ptp_t(Q_HOME, goal, 10, 0.05)[0].acc_time == 0.05
+
+
+@pytest.mark.parametrize("bad", [-0.1, float("nan")])
+def test_min_acc_time_must_not_be_negative(solver, bad):
+    with pytest.raises(ValueError, match="min_acc_time"):
+        KinematicMotionPlanner(solver, min_acc_time=bad)
 
 
 @pytest.mark.parametrize("mode", ["hold", "jump"])

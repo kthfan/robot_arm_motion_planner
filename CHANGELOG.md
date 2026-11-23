@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-- LINE_T `uniform_speed` mode (`KinematicMotionPlanner(uniform_speed=True)`, or per call
-  `plan_line_t(..., uniform_speed=True)`; `plan_motion.py line --uniform-speed`): every waypoint gets the same
-  PTP_J speed %, with one ramp up at the start and one down at the end, so the motors do not speed up and slow
-  down from segment to segment. The speed % keeps the requested line duration, lowered (with a warning) to stay
-  within 100 % and the joint acceleration limits. Off by default.
+- LINE_T `uniform_speed` mode, set on the planner (`KinematicMotionPlanner(uniform_speed=True)`;
+  `plan_motion.py line --uniform-speed`): every waypoint gets the same PTP_J speed %, the whole motion long,
+  so the motors do not speed up and slow down from segment to segment. The speed % keeps the requested line
+  duration, lowered (with a warning) to stay within 100 % and the joint acceleration limits. Each waypoint's
+  `acc_time` covers the joint velocity changes at its segment within the acceleration limits (the requested
+  `acc_time` at least at the first and last waypoint) and is at least `uniform_min_acc_time` (0.1 s). Off by
+  default.
 
 ## 0.1.0
 

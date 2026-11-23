@@ -119,23 +119,26 @@ Uniform speed
 The profiles above give every segment its own speed %, and near a
 singularity the speed % can change a lot from one segment to the next. On the
 robot, the motors then speed up and slow down at every waypoint (jitter).
-``uniform_speed=True`` (constructor default, or per call
-``plan_line_t(..., uniform_speed=True)``; CLI ``--uniform-speed``) instead
-runs the whole motion at one PTP_J speed %:
+A planner built with ``KinematicMotionPlanner(..., uniform_speed=True)`` (CLI
+``--uniform-speed``) instead gives **every waypoint the same PTP_J speed %**,
+the whole motion long, including the first and the last one:
 
-* The speed % rises once over ``acc_time`` at the start, stays at one value,
-  and falls once at the end. Held reconfigurations and jumps run at the same
-  speed %.
+* Held reconfigurations and jumps run at the same speed %.
 * That value makes the line take as long as at the requested TCP speed. The
   TCP is then faster where the joints move little per mm and slower where they
   move much (near a singularity); the joint path, and so the TCP path, are the
   same as with the default timing.
 * It is lowered, with a warning, if it would exceed 100 % or the joint
-  acceleration limits at the waypoints. The ramp is lengthened if the joints
-  could not reach the speed within ``acc_time``.
+  acceleration limits at the waypoints.
+* The robot ramps with each waypoint's ``acc_time``. It is long enough for the
+  joint velocity change at both ends of the segment within
+  ``max_joint_acceleration``: from rest at the first waypoint and to rest at
+  the last one, where it is also at least the requested ``acc_time``. It is
+  never shorter than ``uniform_min_acc_time`` (0.1 s), and unlike the default
+  timing it may be longer than the segment.
 * ``diagnostics["uniform_speed"]`` holds the speed % used, the speed % the
-  requested TCP speed would need, what limited it, and the ramp time.
-* Each waypoint's ``acc_time`` is still at most its segment duration.
+  requested TCP speed would need, what limited it, and the range of
+  ``acc_time``.
 
 Tuning summary
 --------------
@@ -159,6 +162,7 @@ Parameter                       Default                Effect
 ``held_smoothing_batch``        True                   red-black smoothing
 ``timing_on_dense``             True                   time before simplification
 ``uniform_speed``               False                  one speed % for the whole line
+``uniform_min_acc_time``        0.1 s                  shortest acc_time with uniform_speed
 ``max_plan_time``               30 s                   planning budget (None: none)
 ``min_velocity``                1 %                    lowest PTP_J speed %
 ==============================  =====================  =======================================

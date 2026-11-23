@@ -55,8 +55,8 @@ def test_line_uniform_speed_flag(plan_motion, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["status"] == "ok"
     info = out["diagnostics"]["uniform_speed"]
-    # a short line may not reach the cruise speed %
-    assert max(w["velocity"] for w in out["waypoints"]) <= info["velocity"] + 1e-6
+    assert all(w["velocity"] == info["velocity"] for w in out["waypoints"])
+    assert all(w["acc_time"] >= 0.1 for w in out["waypoints"])
 
 
 def test_unreachable_goal_fails_with_exit_code_1(plan_motion, capsys):

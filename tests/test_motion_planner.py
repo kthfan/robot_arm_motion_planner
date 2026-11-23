@@ -783,66 +783,78 @@ def test_min_velocity_must_be_a_speed_percentage(solver, bad):
 # ---------------------------------------------------------------- uniform speed
 
 
-def _rises_holds_falls(pcts, rel=1e-6):
-    """Speed % rises once, stays at its maximum, then falls once."""
-    peak = max(pcts)
-    cruise = [i for i, p in enumerate(pcts) if p >= peak * (1 - rel)]
-    up, down = pcts[: cruise[0] + 1], pcts[cruise[-1]:]
-    return (
-        all(p >= peak * (1 - rel) for p in pcts[cruise[0]: cruise[-1] + 1])
-        and all(b >= a * (1 - rel) for a, b in zip(up[:-1], up[1:]))
-        and all(b <= a * (1 + rel) for a, b in zip(down[:-1], down[1:]))
-    )
+@pytest.fixture(scope="module")
+def uniform_planner(solver):
+    return KinematicMotionPlanner(solver, uniform_speed=True)
 
 
-def test_uniform_speed_is_off_by_default(planner, solver):
+def _velocity_changes(solver, q0, actions, amax):
+    """Joint velocity change at each waypoint (from / to rest at the ends), as time at amax."""
+    qs = np.array([q0] + [a.positions for a in actions])
+    vel = np.diff(qs, axis=0) / _segment_durations(solver, q0, actions)[:, None]
+    padded = np.vstack([np.zeros(6), vel, np.zeros(6)])
+    return np.max(np.abs(np.diff(padded, axis=0)) / amax, axis=1)
+
+
+def _check_uniform(planner, solver, q0, actions, diag, acc_time):
+    pct = diag["uniform_speed"]["velocity"]
+    assert all(a.velocity == pct for a in actions)  # the whole motion at one speed %
+    acc = np.array([a.acc_time for a in actions])
+    assert np.all(acc >= planner.uniform_min_acc_time)
+    assert acc[0] >= acc_time and acc[-1] >= acc_time
+    # each acc_time covers the joint velocity change at both ends of its segment
+    need = _velocity_changes(solver, q0, actions, planner.max_joint_acceleration)
+    assert np.all(acc >= need[:-1] - 1e-9) and np.all(acc >= need[1:] - 1e-9)
+    _, _, vel, _ = _joint_profile(solver, q0, actions)
+    assert np.all(np.abs(vel) <= solver.velocity_limits * (1 + 1e-6))
+
+
+def test_uniform_speed_is_off_by_default(planner):
     assert planner.uniform_speed is False
-    goal = _shifted_goal(solver, Q_HOME, (0.1, 0.1, -0.05))
-    a = planner.plan_line_t(Q_HOME, goal, velocity=10, acc_time=0.2)
-    assert planner.plan_line_t(Q_HOME, goal, velocity=10, acc_time=0.2, uniform_speed=False) == a
+    assert planner.uniform_min_acc_time == 0.1
 
 
-def test_uniform_speed_runs_one_speed_percentage_with_one_ramp(solver):
-    planner = KinematicMotionPlanner(solver, uniform_speed=True)
-    length, pct, ta = 0.15, 10, 0.2
-    goal = _shifted_goal(solver, Q_HOME, (-length, 0.1, -0.05))
+def test_uniform_speed_runs_the_whole_line_at_one_speed_percentage(uniform_planner, solver):
+    pct, ta = 10, 0.2
+    goal = _shifted_goal(solver, Q_HOME, (-0.15, 0.1, -0.05))
     path_len = np.linalg.norm(goal[:3, 3] - solver.fk(Q_HOME)[:3, 3])
     diag = {}
-    actions = planner.plan_line_t(Q_HOME, goal, velocity=pct, acc_time=ta, diagnostics=diag)
-    pcts = [a.velocity for a in actions]
-    assert _rises_holds_falls(pcts)
-    cruise = [p for p in pcts if p >= max(pcts) * (1 - 1e-6)]
-    assert len(cruise) >= len(pcts) // 2
-    assert max(pcts) == pytest.approx(diag["uniform_speed"]["velocity"])
+    actions = uniform_planner.plan_line_t(Q_HOME, goal, velocity=pct, acc_time=ta, diagnostics=diag)
+    _check_uniform(uniform_planner, solver, Q_HOME, actions, diag, ta)
     assert diag["uniform_speed"]["limited_by"] is None
-    # as long as the line at the requested TCP speed (cruise + one ramp)
+    # as long as the line's cruise at the requested TCP speed
     dts = _segment_durations(solver, Q_HOME, actions)
-    assert dts.sum() == pytest.approx(path_len / (pct / 100 * planner.max_linear_velocity) + ta, rel=1e-3)
-    assert all(a.acc_time <= dt + 1e-9 for a, dt in zip(actions, dts))
-    # same waypoints as the default timing, only the speed % differs
+    assert dts.sum() == pytest.approx(path_len / (pct / 100 * uniform_planner.max_linear_velocity),
+                                      rel=1e-3)
+    # same waypoints as the default timing, only speed % and acc_time differ
     default = KinematicMotionPlanner(solver).plan_line_t(Q_HOME, goal, velocity=pct, acc_time=ta)
     assert [a.positions for a in default] == [a.positions for a in actions]
-    # the per-call switch equals the planner setting
-    assert KinematicMotionPlanner(solver).plan_line_t(
-        Q_HOME, goal, velocity=pct, acc_time=ta, uniform_speed=True) == actions
-    assert planner.plan_line_t(Q_HOME, goal, velocity=pct, acc_time=ta, uniform_speed=False) == default
+    assert len({a.velocity for a in default}) > 1
+
+
+def test_uniform_speed_acc_time_is_at_least_uniform_min_acc_time(solver):
+    planner = KinematicMotionPlanner(solver, uniform_speed=True, uniform_min_acc_time=0.3)
+    goal = _shifted_goal(solver, Q_HOME, (0.1, 0.1, -0.05))
+    actions = planner.plan_line_t(Q_HOME, goal, velocity=10, acc_time=0.05)
+    assert min(a.acc_time for a in actions) >= 0.3
+    with pytest.raises(ValueError, match="uniform_min_acc_time"):
+        KinematicMotionPlanner(solver, uniform_min_acc_time=-0.1)
 
 
 @pytest.mark.parametrize("mode", ["hold", "jump"])
-def test_uniform_speed_through_a_wrist_flip_keeps_joint_limits(planner, solver, mode):
+def test_uniform_speed_through_a_wrist_flip_keeps_joint_limits(uniform_planner, solver, mode):
     q0, goal = _wrist_line(solver, -0.1, 0.1)
+    diag = {}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        diag = {}
-        actions = planner.plan_line_t(q0, goal, velocity=20, acc_time=0.2, on_discontinuity=mode,
-                                      uniform_speed=True, diagnostics=diag)
-    pcts = [a.velocity for a in actions]
-    assert _rises_holds_falls(pcts)
-    assert sum(p >= max(pcts) * (1 - 1e-6) for p in pcts) >= len(pcts) // 2  # a plateau
+        actions = uniform_planner.plan_line_t(q0, goal, velocity=100, acc_time=0.2,
+                                              on_discontinuity=mode, diagnostics=diag)
+    _check_uniform(uniform_planner, solver, q0, actions, diag, 0.2)
     assert diag["capped_segments"] == 0
-    _, _, vel, acc = _joint_profile(solver, q0, actions)
-    assert np.all(np.abs(vel) <= solver.velocity_limits * (1 + 1e-6))
-    assert np.all(acc <= planner.max_joint_acceleration * (1 + 1e-6))
+    # joint acceleration through the inner waypoints within the limits
+    _, dts, vel, _ = _joint_profile(solver, q0, actions)
+    acc = np.abs(np.diff(vel, axis=0)) / (0.5 * (dts[:-1] + dts[1:]))[:, None]
+    assert np.all(acc <= uniform_planner.max_joint_acceleration * (1 + 1e-6))
     lin, ang = pose_distance(solver.fk(actions[-1].positions), goal)
     assert lin < 1e-5 and ang < 1e-5
 
@@ -856,8 +868,4 @@ def test_uniform_speed_warns_when_slower_than_requested(solver):
     info = diag["uniform_speed"]
     assert info["velocity"] < info["requested_velocity"]
     assert info["limited_by"] in ("velocity", "acceleration")
-    assert all(a.velocity <= 100.0 for a in actions)
-    # acc_time 0: the ramp is lengthened to stay within the acceleration limits
-    assert info["ramp_time"] > 0.0
-    _, _, _, acc = _joint_profile(solver, Q_HOME, actions)
-    assert np.all(acc <= planner.max_joint_acceleration * (1 + 1e-6))
+    _check_uniform(planner, solver, Q_HOME, actions, diag, 0.0)

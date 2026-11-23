@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+Defaults changed against LINE_T jitter (motors speeding up and slowing down at every waypoint):
+
+- `min_acc_time` planner setting, default 0.3 s (`plan_motion.py --min-acc-time`): shortest `acc_time` of every
+  waypoint, for LINE_T in any mode and PTP_T. Near a singularity the segments last only a few milliseconds and
+  their `acc_time`, capped at the segment duration, was just as short. The minimum may exceed the segment
+  duration; `min_acc_time=0` restores the former behaviour.
+- `simplify_held` is on by default: held reconfigurations are merged into fewer, longer PTP_J segments, which
+  the longer `acc_time` would otherwise slow down too much.
+
 ## 0.1.0
 
 First release as a standalone package, split out of RobotServer (`robot/kinematics`).

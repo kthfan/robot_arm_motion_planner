@@ -87,8 +87,9 @@ Simplification
 With ``simplify_line``, waypoints on the line are dropped when their neighbours
 can be joined directly within the tolerances and ``max_joint_step``. The robot
 then gets fewer, longer PTP_J segments. Jumps are always kept. Held routes are
-also merged only with ``simplify_held``. Use it when the controller's minimum
-time per segment caps the speed of routes made of many short segments.
+also merged with ``simplify_held`` (on by default). The controller's minimum
+time per segment, and ``min_acc_time`` (see below), cap the speed of routes
+made of many short segments, so they would run too slowly unmerged.
 
 Timing
 ------
@@ -113,6 +114,13 @@ Each segment's speed % is then
 ``100 * max_j(|dq_j| / vmax_j) / duration``, clipped to
 [``min_velocity``, 100]. Segments clipped at 100 % are reported as *capped*.
 
+Each segment's ``acc_time`` is the requested one, at most the segment
+duration, and then at least ``min_acc_time`` (0.3 s; CLI ``--min-acc-time``).
+Near a singularity the segments last only a few milliseconds, and ramps that
+short made the motors speed up and slow down at every waypoint (jitter). The
+minimum also applies to PTP_T and may exceed the segment duration;
+``min_acc_time=0`` restores the former cap.
+
 Tuning summary
 --------------
 
@@ -128,7 +136,7 @@ Parameter                       Default                Effect
 ``goal_selection``              ``"closest"``          goal by joint distance or IK branch
 ``smooth_timing``               True                   one speed profile (hold / jump)
 ``simplify_line``               True                   fewer PTP_J segments
-``simplify_held``               False                  also merge held routes
+``simplify_held``               True                   also merge held routes
 ``held_smoothing``              10                     smoothing sweeps (0: off)
 ``held_smoothing_tolerance``    0.5                    share of the flip tolerance used
 ``held_deviation_weight``       0.1                    pull of held routes toward the line
@@ -136,4 +144,5 @@ Parameter                       Default                Effect
 ``timing_on_dense``             True                   time before simplification
 ``max_plan_time``               30 s                   planning budget (None: none)
 ``min_velocity``                1 %                    lowest PTP_J speed %
+``min_acc_time``                0.3 s                  shortest acc_time (0: none)
 ==============================  =====================  =======================================

@@ -74,13 +74,13 @@ def test_planner_fk_matches_solver(planner, solver):
 def test_ptp_t_returns_single_ptp_j_action_reaching_goal(planner, solver):
     goal = _shifted_goal(solver, Q_HOME, (0.05, -0.05, 0.02), drz=0.3)
     actions = planner.plan_ptp_t(
-        Q_HOME, goal, velocity=30, acc_time=0.2, blend_percentage=10,
+        Q_HOME, goal, velocity=30, acc_time=0.5, blend_percentage=10,
         fine_goal=True, blocked=False,
     )
     assert len(actions) == 1
     a = actions[0]
     assert (a.velocity, a.acc_time, a.blend_percentage, a.fine_goal, a.blocked) == (
-        30, 0.2, 10, True, False,
+        30, 0.5, 10, True, False,
     )
     lin, ang = pose_distance(solver.fk(a.positions), goal)
     assert lin < 1e-5 and ang < 1e-5
@@ -177,7 +177,7 @@ def test_line_t_timing_follows_trapezoidal_tcp_speed(planner, solver):
     i = int(np.searchsorted(t, t[-1] / 2))
     seg = np.linalg.norm(solver.fk(qs[i])[:3, 3] - solver.fk(qs[i - 1])[:3, 3])
     assert seg / dts[i - 1] == pytest.approx(v, rel=1e-2)
-    assert all(a.acc_time <= ta + 1e-12 for a in actions)
+    assert all(a.acc_time <= max(ta, planner.min_acc_time) + 1e-12 for a in actions)
 
 
 def test_line_t_same_start_and_goal_returns_no_actions(planner, solver):
@@ -211,12 +211,55 @@ def test_max_linear_velocity_must_be_positive(solver):
         KinematicMotionPlanner(solver, max_linear_velocity=0.0)
 
 
-def test_line_t_acc_time_never_exceeds_segment_duration(planner, solver):
+def test_line_t_acc_time_never_exceeds_segment_duration_without_min_acc_time(solver):
+    planner = KinematicMotionPlanner(solver, min_acc_time=0.0)
     goal = _shifted_goal(solver, Q_HOME, (0.1, 0.0, 0.0))
     for pct in (0.1, 10, 100):
         actions = planner.plan_line_t(Q_HOME, goal, velocity=pct, acc_time=0.2)
         dts = _segment_durations(solver, Q_HOME, actions)
         assert all(a.acc_time <= dt + 1e-9 for a, dt in zip(actions, dts))
+
+
+def test_defaults_simplify_held_and_min_acc_time(planner):
+    assert planner.simplify_held is True
+    assert planner.min_acc_time == 0.3
+
+
+@pytest.mark.parametrize("mode", ["raise", "hold", "jump"])
+def test_min_acc_time_raises_short_acc_times(solver, mode):
+    goal = _shifted_goal(solver, Q_HOME, (0.1, 0.1, -0.05))
+    off = KinematicMotionPlanner(solver, min_acc_time=0.0).plan_line_t(
+        Q_HOME, goal, velocity=10, acc_time=0.05, on_discontinuity=mode)
+    for floor in (0.3, 0.5):
+        planner = KinematicMotionPlanner(solver, min_acc_time=floor)
+        actions = planner.plan_line_t(Q_HOME, goal, velocity=10, acc_time=0.05,
+                                      on_discontinuity=mode)
+        # same waypoints and speed %, only acc_time raised (also beyond the segment)
+        assert [(a.positions, a.velocity) for a in actions] == [
+            (a.positions, a.velocity) for a in off]
+        assert all(a.acc_time == max(o.acc_time, floor) for a, o in zip(actions, off))
+        assert planner.plan_ptp_t(Q_HOME, goal, 10, 0.05)[0].acc_time == floor
+    assert KinematicMotionPlanner(solver, min_acc_time=0.0).plan_ptp_t(
+        Q_HOME, goal, 10, 0.05)[0].acc_time == 0.05
+
+
+@pytest.mark.parametrize("bad", [-0.1, float("nan")])
+def test_min_acc_time_must_not_be_negative(solver, bad):
+    with pytest.raises(ValueError, match="min_acc_time"):
+        KinematicMotionPlanner(solver, min_acc_time=bad)
+
+
+def test_simplify_held_gives_fewer_waypoints_through_a_held_flip(solver):
+    q0, goal = _wrist_line(solver, -0.1, 0.1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        merged = KinematicMotionPlanner(solver).plan_line_t(
+            q0, goal, velocity=10, acc_time=0.2, on_discontinuity="hold")
+        kept = KinematicMotionPlanner(solver, simplify_held=False).plan_line_t(
+            q0, goal, velocity=10, acc_time=0.2, on_discontinuity="hold")
+    assert len(merged) < len(kept)
+    lin, ang = pose_distance(solver.fk(merged[-1].positions), goal)
+    assert lin < 1e-5 and ang < 1e-5
 
 
 # ------------------------------------------------- LINE_T: singularities, speed
@@ -369,7 +412,8 @@ def test_unsafe_line_t_held_flip_does_not_slow_the_line(planner, solver):
         actions = planner.plan_line_t(
             q0, goal, velocity=pct, acc_time=ta, on_discontinuity="jump"
         )
-    assert all(a.velocity <= 100.0 and a.acc_time <= ta + 1e-12 for a in actions)
+    assert all(a.velocity <= 100.0 and a.acc_time <= max(ta, planner.min_acc_time) + 1e-12
+               for a in actions)
     nominal = 0.2 / (pct / 100 * planner.max_linear_velocity) + ta
     assert _segment_durations(solver, q0, actions).sum() < 1.5 * nominal
 
@@ -431,7 +475,7 @@ def test_unsafe_line_t_jump_runs_at_line_speed_without_slowing_the_line(direct_p
     jump = actions[i]
     # the jump is a plain PTP_J at the requested speed %
     assert jump.velocity == pytest.approx(pct)
-    assert jump.acc_time == pytest.approx(ta)
+    assert jump.acc_time == pytest.approx(max(ta, planner.min_acc_time))
     # the rest of the line is not crawling because of the jump
     dts = _segment_durations(solver, q0, actions)
     line_time = dts.sum() - dts[i]

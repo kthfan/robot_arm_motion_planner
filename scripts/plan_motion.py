@@ -78,6 +78,11 @@ def _solver_planner(args):
         from motion_planner.planner import KinematicMotionPlanner
 
         planner = KinematicMotionPlanner(PinocchioSolver())
+    min_acc = getattr(args, "min_acc_time", None)
+    if min_acc is not None:
+        from motion_planner.planner import KinematicMotionPlanner
+
+        planner = KinematicMotionPlanner(planner.solver, min_acc_time=min_acc)
     return planner.solver, planner
 
 
@@ -170,6 +175,9 @@ def main(argv=None) -> int:
     ap.add_argument("--acc-time", type=float, default=0.2, help="ramp time [s] (default: %(default)s)")
     ap.add_argument("--mode", choices=DISCONTINUITY_MODES, default="hold",
                     help="LINE_T on_discontinuity (default: %(default)s)")
+    ap.add_argument("--min-acc-time", type=float, default=None,
+                    help="ptp / line: shortest acc_time [s] of every waypoint "
+                         "(planner min_acc_time, default 0.3)")
     ap.add_argument("--deg", action="store_true", help="joints and pose rotation in degrees")
     ap.add_argument("--mm", action="store_true", help="pose position in millimetres")
     ap.add_argument("--uncalibrated", action="store_true", help="ignore models/tm5s_calibration.json")

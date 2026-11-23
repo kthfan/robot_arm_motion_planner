@@ -223,12 +223,19 @@ class KinematicMotionPlanner(MotionPlanner):
             route already has (at least ``linear_tolerance`` /
             ``angular_tolerance``). Fewer, longer PTP_J segments: the robot
             needs a minimum time per segment, which caps the speed of routes
-            made of many short segments.
+            made of many short segments. On by default, because
+            ``min_acc_time`` makes short segments run slower.
         held_smoothing_batch: Smooth every other waypoint at once (much faster;
             False: one waypoint after the other, the earlier behaviour).
         max_plan_time: Planning time budget of one LINE_T motion [s] (None: no
             budget). Past it the search stops and the motion fails instead of
             searching for minutes.
+        min_acc_time: Shortest ``acc_time`` [s] of every waypoint the planner
+            returns (LINE_T in any mode, and PTP_T). A shorter ``acc_time`` is
+            raised to it, also where that makes it longer than the segment.
+            Very short ramps on the short LINE_T segments make the motors
+            speed up and slow down at every waypoint (jitter). 0: no minimum
+            (``acc_time`` at most the segment duration, the former behaviour).
     """
 
     def __init__(
@@ -255,7 +262,8 @@ class KinematicMotionPlanner(MotionPlanner):
         held_smoothing_batch: bool = True,
         max_plan_time: Optional[float] = 30.0,
         timing_on_dense: bool = True,
-        simplify_held: bool = False,
+        simplify_held: bool = True,
+        min_acc_time: float = 0.3,
     ) -> None:
         if goal_selection not in GOAL_SELECTIONS:
             raise ValueError(f"goal_selection must be one of {GOAL_SELECTIONS}, got {goal_selection!r}")
@@ -267,6 +275,8 @@ class KinematicMotionPlanner(MotionPlanner):
             raise ValueError(f"max_flip_deviation must be >= 0 m, got {max_flip_deviation}")
         if not max_flip_angle >= 0.0:
             raise ValueError(f"max_flip_angle must be >= 0 rad, got {max_flip_angle}")
+        if not min_acc_time >= 0.0:
+            raise ValueError(f"min_acc_time must be >= 0 s, got {min_acc_time}")
         if not max_held_length >= 0.0:
             raise ValueError(f"max_held_length must be >= 0 m, got {max_held_length}")
         self.solver = solver
@@ -291,6 +301,7 @@ class KinematicMotionPlanner(MotionPlanner):
         self.max_plan_time = max_plan_time
         self.timing_on_dense = bool(timing_on_dense)
         self.simplify_held = bool(simplify_held)
+        self.min_acc_time = float(min_acc_time)
         if max_joint_acceleration is None:
             self.max_joint_acceleration = np.asarray(solver.velocity_limits) / 0.2
         else:
@@ -331,7 +342,8 @@ class KinematicMotionPlanner(MotionPlanner):
         if diagnostics is not None:
             diagnostics["n_ik_solutions"] = len(solutions)
         return [
-            JointWaypoint([float(x) for x in q], velocity, acc_time,
+            JointWaypoint([float(x) for x in q], velocity,
+                          max(float(acc_time), self.min_acc_time),
                           blend_percentage, fine_goal, blocked)
         ]
 
@@ -569,7 +581,7 @@ class KinematicMotionPlanner(MotionPlanner):
                 JointWaypoint(
                     [float(x) for x in q],
                     pct,
-                    min(ramp, duration),
+                    max(min(ramp, duration), self.min_acc_time),
                     blend_percentage if is_last else 100,
                     fine_goal if is_last else False,
                     blocked if is_last else False,

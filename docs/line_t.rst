@@ -113,6 +113,30 @@ Each segment's speed % is then
 ``100 * max_j(|dq_j| / vmax_j) / duration``, clipped to
 [``min_velocity``, 100]. Segments clipped at 100 % are reported as *capped*.
 
+Uniform speed
+~~~~~~~~~~~~~
+
+The profiles above give every segment its own speed %, and near a
+singularity the speed % can change a lot from one segment to the next. On the
+robot, the motors then speed up and slow down at every waypoint (jitter).
+``uniform_speed=True`` (constructor default, or per call
+``plan_line_t(..., uniform_speed=True)``; CLI ``--uniform-speed``) instead
+runs the whole motion at one PTP_J speed %:
+
+* The speed % rises once over ``acc_time`` at the start, stays at one value,
+  and falls once at the end. Held reconfigurations and jumps run at the same
+  speed %.
+* That value makes the line take as long as at the requested TCP speed. The
+  TCP is then faster where the joints move little per mm and slower where they
+  move much (near a singularity); the joint path, and so the TCP path, are the
+  same as with the default timing.
+* It is lowered, with a warning, if it would exceed 100 % or the joint
+  acceleration limits at the waypoints. The ramp is lengthened if the joints
+  could not reach the speed within ``acc_time``.
+* ``diagnostics["uniform_speed"]`` holds the speed % used, the speed % the
+  requested TCP speed would need, what limited it, and the ramp time.
+* Each waypoint's ``acc_time`` is still at most its segment duration.
+
 Tuning summary
 --------------
 
@@ -134,6 +158,7 @@ Parameter                       Default                Effect
 ``held_deviation_weight``       0.1                    pull of held routes toward the line
 ``held_smoothing_batch``        True                   red-black smoothing
 ``timing_on_dense``             True                   time before simplification
+``uniform_speed``               False                  one speed % for the whole line
 ``max_plan_time``               30 s                   planning budget (None: none)
 ``min_velocity``                1 %                    lowest PTP_J speed %
 ==============================  =====================  =======================================

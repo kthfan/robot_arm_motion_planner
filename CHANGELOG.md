@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- LINE_T `uniform_speed` mode (`KinematicMotionPlanner(uniform_speed=True)`, or per call
+  `plan_line_t(..., uniform_speed=True)`; `plan_motion.py line --uniform-speed`): every waypoint gets the same
+  PTP_J speed %, with one ramp up at the start and one down at the end, so the motors do not speed up and slow
+  down from segment to segment. The speed % keeps the requested line duration, lowered (with a warning) to stay
+  within 100 % and the joint acceleration limits. Off by default.
+
 ## 0.1.0
 
 First release as a standalone package, split out of RobotServer (`robot/kinematics`).

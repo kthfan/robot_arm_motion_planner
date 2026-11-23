@@ -48,6 +48,17 @@ def test_line_json_reaches_the_goal(plan_motion, capsys):
                                [5, 20, 65, 11, 86, 6], atol=0.5)
 
 
+def test_line_uniform_speed_flag(plan_motion, capsys):
+    goal = _goal_deg_mm(plan_motion, capsys, ["5", "20", "65", "11", "86", "6"])
+    assert plan_motion.main(["line", "--q0", *Q0_DEG, "--goal", *goal, "--deg", "--mm",
+                             "--speed", "10", "--uniform-speed", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "ok"
+    info = out["diagnostics"]["uniform_speed"]
+    # a short line may not reach the cruise speed %
+    assert max(w["velocity"] for w in out["waypoints"]) <= info["velocity"] + 1e-6
+
+
 def test_unreachable_goal_fails_with_exit_code_1(plan_motion, capsys):
     rc = plan_motion.main(["line", "--q0", *Q0_DEG, "--goal", "5000", "0", "0", "180", "0", "0",
                            "--deg", "--mm"])

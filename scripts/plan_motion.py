@@ -116,6 +116,8 @@ def cmd_plan(args) -> int:
         kw["goal_joints"] = _joints(args.goal_joints, args.deg)
     if args.cmd == "line":
         kw["on_discontinuity"] = args.mode
+        if args.uniform_speed:
+            kw["uniform_speed"] = True
     plan = planner.plan_line_t if args.cmd == "line" else planner.plan_ptp_t
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -170,6 +172,8 @@ def main(argv=None) -> int:
     ap.add_argument("--acc-time", type=float, default=0.2, help="ramp time [s] (default: %(default)s)")
     ap.add_argument("--mode", choices=DISCONTINUITY_MODES, default="hold",
                     help="LINE_T on_discontinuity (default: %(default)s)")
+    ap.add_argument("--uniform-speed", action="store_true",
+                    help="line: one PTP_J speed %% for every waypoint (single ramp up / down)")
     ap.add_argument("--deg", action="store_true", help="joints and pose rotation in degrees")
     ap.add_argument("--mm", action="store_true", help="pose position in millimetres")
     ap.add_argument("--uncalibrated", action="store_true", help="ignore models/tm5s_calibration.json")

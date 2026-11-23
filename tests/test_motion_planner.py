@@ -778,3 +778,86 @@ def test_min_velocity_does_not_slow_fast_segments(solver):
 def test_min_velocity_must_be_a_speed_percentage(solver, bad):
     with pytest.raises(ValueError, match="min_velocity"):
         KinematicMotionPlanner(solver, min_velocity=bad)
+
+
+# ---------------------------------------------------------------- uniform speed
+
+
+def _rises_holds_falls(pcts, rel=1e-6):
+    """Speed % rises once, stays at its maximum, then falls once."""
+    peak = max(pcts)
+    cruise = [i for i, p in enumerate(pcts) if p >= peak * (1 - rel)]
+    up, down = pcts[: cruise[0] + 1], pcts[cruise[-1]:]
+    return (
+        all(p >= peak * (1 - rel) for p in pcts[cruise[0]: cruise[-1] + 1])
+        and all(b >= a * (1 - rel) for a, b in zip(up[:-1], up[1:]))
+        and all(b <= a * (1 + rel) for a, b in zip(down[:-1], down[1:]))
+    )
+
+
+def test_uniform_speed_is_off_by_default(planner, solver):
+    assert planner.uniform_speed is False
+    goal = _shifted_goal(solver, Q_HOME, (0.1, 0.1, -0.05))
+    a = planner.plan_line_t(Q_HOME, goal, velocity=10, acc_time=0.2)
+    assert planner.plan_line_t(Q_HOME, goal, velocity=10, acc_time=0.2, uniform_speed=False) == a
+
+
+def test_uniform_speed_runs_one_speed_percentage_with_one_ramp(solver):
+    planner = KinematicMotionPlanner(solver, uniform_speed=True)
+    length, pct, ta = 0.15, 10, 0.2
+    goal = _shifted_goal(solver, Q_HOME, (-length, 0.1, -0.05))
+    path_len = np.linalg.norm(goal[:3, 3] - solver.fk(Q_HOME)[:3, 3])
+    diag = {}
+    actions = planner.plan_line_t(Q_HOME, goal, velocity=pct, acc_time=ta, diagnostics=diag)
+    pcts = [a.velocity for a in actions]
+    assert _rises_holds_falls(pcts)
+    cruise = [p for p in pcts if p >= max(pcts) * (1 - 1e-6)]
+    assert len(cruise) >= len(pcts) // 2
+    assert max(pcts) == pytest.approx(diag["uniform_speed"]["velocity"])
+    assert diag["uniform_speed"]["limited_by"] is None
+    # as long as the line at the requested TCP speed (cruise + one ramp)
+    dts = _segment_durations(solver, Q_HOME, actions)
+    assert dts.sum() == pytest.approx(path_len / (pct / 100 * planner.max_linear_velocity) + ta, rel=1e-3)
+    assert all(a.acc_time <= dt + 1e-9 for a, dt in zip(actions, dts))
+    # same waypoints as the default timing, only the speed % differs
+    default = KinematicMotionPlanner(solver).plan_line_t(Q_HOME, goal, velocity=pct, acc_time=ta)
+    assert [a.positions for a in default] == [a.positions for a in actions]
+    # the per-call switch equals the planner setting
+    assert KinematicMotionPlanner(solver).plan_line_t(
+        Q_HOME, goal, velocity=pct, acc_time=ta, uniform_speed=True) == actions
+    assert planner.plan_line_t(Q_HOME, goal, velocity=pct, acc_time=ta, uniform_speed=False) == default
+
+
+@pytest.mark.parametrize("mode", ["hold", "jump"])
+def test_uniform_speed_through_a_wrist_flip_keeps_joint_limits(planner, solver, mode):
+    q0, goal = _wrist_line(solver, -0.1, 0.1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        diag = {}
+        actions = planner.plan_line_t(q0, goal, velocity=20, acc_time=0.2, on_discontinuity=mode,
+                                      uniform_speed=True, diagnostics=diag)
+    pcts = [a.velocity for a in actions]
+    assert _rises_holds_falls(pcts)
+    assert sum(p >= max(pcts) * (1 - 1e-6) for p in pcts) >= len(pcts) // 2  # a plateau
+    assert diag["capped_segments"] == 0
+    _, _, vel, acc = _joint_profile(solver, q0, actions)
+    assert np.all(np.abs(vel) <= solver.velocity_limits * (1 + 1e-6))
+    assert np.all(acc <= planner.max_joint_acceleration * (1 + 1e-6))
+    lin, ang = pose_distance(solver.fk(actions[-1].positions), goal)
+    assert lin < 1e-5 and ang < 1e-5
+
+
+def test_uniform_speed_warns_when_slower_than_requested(solver):
+    planner = KinematicMotionPlanner(solver, max_linear_velocity=3.0, uniform_speed=True)
+    goal = _shifted_goal(solver, Q_HOME, (-0.1, 0.1, -0.1))
+    diag = {}
+    with pytest.warns(UserWarning, match="uniform speed"):
+        actions = planner.plan_line_t(Q_HOME, goal, velocity=100, acc_time=0.0, diagnostics=diag)
+    info = diag["uniform_speed"]
+    assert info["velocity"] < info["requested_velocity"]
+    assert info["limited_by"] in ("velocity", "acceleration")
+    assert all(a.velocity <= 100.0 for a in actions)
+    # acc_time 0: the ramp is lengthened to stay within the acceleration limits
+    assert info["ramp_time"] > 0.0
+    _, _, _, acc = _joint_profile(solver, Q_HOME, actions)
+    assert np.all(acc <= planner.max_joint_acceleration * (1 + 1e-6))
